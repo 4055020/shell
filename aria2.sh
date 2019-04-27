@@ -1,646 +1,1540 @@
-#!/usr/bin/env bash
-PATH=/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin:/usr/local/sbin:~/bin
-export PATH
+#!/bin/bash
+export PATH=/sbin:/bin:/usr/sbin:/usr/bin:/usr/local/sbin:/usr/local/bin:~/bin
+clear
 
-#=================================================
-#	System Required: CentOS/Debian/Ubuntu
-#	Description: Aria2
-#	Version: 1.1.10
-#	Author: Toyo
-#	Blog: https://doub.io/shell-jc4/
-#=================================================
-sh_ver="1.1.10"
-filepath=$(cd "$(dirname "$0")"; pwd)
-file_1=$(echo -e "${filepath}"|awk -F "$0" '{print $1}')
-file="/root/.aria2"
-aria2_conf="/root/.aria2/aria2.conf"
-aria2_log="/root/.aria2/aria2.log"
-Folder="/usr/local/aria2"
-aria2c="/usr/bin/aria2c"
-Crontab_file="/usr/bin/crontab"
 
-Green_font_prefix="\033[32m" && Red_font_prefix="\033[31m" && Green_background_prefix="\033[42;37m" && Red_background_prefix="\033[41;37m" && Font_color_suffix="\033[0m"
-Info="${Green_font_prefix}[信息]${Font_color_suffix}"
-Error="${Red_font_prefix}[错误]${Font_color_suffix}"
-Tip="${Green_font_prefix}[注意]${Font_color_suffix}"
 
-check_root(){
-	[[ $EUID != 0 ]] && echo -e "${Error} 当前非ROOT账号(或没有ROOT权限)，无法继续操作，请更换ROOT账号或使用 ${Green_background_prefix}sudo su${Font_color_suffix} 命令获取临时ROOT权限（执行后可能会提示输入当前账号的密码）。" && exit 1
-}
-#检查系统
-check_sys(){
-	if [[ -f /etc/redhat-release ]]; then
-		release="centos"
-	elif cat /etc/issue | grep -q -E -i "debian"; then
-		release="debian"
-	elif cat /etc/issue | grep -q -E -i "ubuntu"; then
-		release="ubuntu"
-	elif cat /etc/issue | grep -q -E -i "centos|red hat|redhat"; then
-		release="centos"
-	elif cat /proc/version | grep -q -E -i "debian"; then
-		release="debian"
-	elif cat /proc/version | grep -q -E -i "ubuntu"; then
-		release="ubuntu"
-	elif cat /proc/version | grep -q -E -i "centos|red hat|redhat"; then
-		release="centos"
-    fi
-	bit=`uname -m`
-}
-check_installed_status(){
-	[[ ! -e ${aria2c} ]] && echo -e "${Error} Aria2 没有安装，请检查 !" && exit 1
-	[[ ! -e ${aria2_conf} ]] && echo -e "${Error} Aria2 配置文件不存在，请检查 !" && [[ $1 != "un" ]] && exit 1
-}
-check_crontab_installed_status(){
-	if [[ ! -e ${Crontab_file} ]]; then
-		echo -e "${Error} Crontab 没有安装，开始安装..."
-		if [[ ${release} == "centos" ]]; then
-			yum install crond -y
-		else
-			apt-get install cron -y
-		fi
-		if [[ ! -e ${Crontab_file} ]]; then
-			echo -e "${Error} Crontab 安装失败，请检查！" && exit 1
-		else
-			echo -e "${Info} Crontab 安装成功！"
-		fi
-	fi
-}
-check_pid(){
-	PID=`ps -ef| grep "aria2c"| grep -v grep| grep -v "aria2.sh"| grep -v "init.d"| grep -v "service"| awk '{print $2}'`
-}
-check_new_ver(){
-	echo -e "${Info} 请输入 Aria2 版本号，格式如：[ 1.34.0 ]，获取地址：[ https://github.com/king567/Aria2-static-build-128-thread/releases ]"
-	read -e -p "默认回车自动获取最新版本号:" aria2_new_ver
-	if [[ -z ${aria2_new_ver} ]]; then
-		aria2_new_ver=$(wget --no-check-certificate -qO- https://api.github.com/repos/king567/Aria2-static-build-128-thread/releases | grep -o '"tag_name": ".*"' |head -n 1| sed 's/"//g;s/v//g' | sed 's/tag_name: //g')
-		if [[ -z ${aria2_new_ver} ]]; then
-			echo -e "${Error} Aria2 最新版本获取失败，请手动获取最新版本号[ https://github.com/king567/Aria2-static-build-128-thread/releases ]"
-			read -e -p "请输入版本号 [ 格式如 1.34.0 ] :" aria2_new_ver
-			[[ -z "${aria2_new_ver}" ]] && echo "取消..." && exit 1
-		else
-			echo -e "${Info} 检测到 Aria2 最新版本为 [ ${aria2_new_ver} ]"
-		fi
-	else
-		echo -e "${Info} 即将准备下载 Aria2 版本为 [ ${aria2_new_ver} ]"
-	fi
-}
-check_ver_comparison(){
-	aria2_now_ver=$(${aria2c} -v|head -n 1|awk '{print $3}')
-	[[ -z ${aria2_now_ver} ]] && echo -e "${Error} Brook 当前版本获取失败 !" && exit 1
-	if [[ "${aria2_now_ver}" != "${aria2_new_ver}" ]]; then
-		echo -e "${Info} 发现 Aria2 已有新版本 [ ${aria2_new_ver} ](当前版本：${aria2_now_ver})"
-		read -e -p "是否更新(会中断当前下载任务，请注意) ? [Y/n] :" yn
-		[[ -z "${yn}" ]] && yn="y"
-		if [[ $yn == [Yy] ]]; then
-			check_pid
-			[[ ! -z $PID ]] && kill -9 ${PID}
-			Download_aria2 "update"
-			Start_aria2
-		fi
-	else
-		echo -e "${Info} 当前 Aria2 已是最新版本 [ ${aria2_new_ver} ]" && exit 1
-	fi
-}
-Download_aria2(){
-	update_dl=$1
-	cd "/usr/local"
-	#echo -e "${bit}"
-	if [[ ${bit} == "x86_64" ]]; then
-		bit="64bit"
-	elif [[ ${bit} == "i386" || ${bit} == "i686" ]]; then
-		bit="32bit"
-	else
-		bit="arm-rbpi"
-	fi
-	wget -N --no-check-certificate "https://github.com/king567/Aria2-static-build-128-thread/releases/download/v${aria2_new_ver}/aria2-${aria2_new_ver}-linux-gnu-${bit}-build1.tar.bz2"
-	Aria2_Name="aria2-${aria2_new_ver}-linux-gnu-${bit}-build1"
-	
-	[[ ! -s "${Aria2_Name}.tar.bz2" ]] && echo -e "${Error} Aria2 压缩包下载失败 !" && exit 1
-	tar jxvf "${Aria2_Name}.tar.bz2"
-	[[ ! -e "/usr/local/${Aria2_Name}" ]] && echo -e "${Error} Aria2 解压失败 !" && rm -rf "${Aria2_Name}.tar.bz2" && exit 1
-	[[ ${update_dl} = "update" ]] && rm -rf "${Folder}"
-	mv "/usr/local/${Aria2_Name}" "${Folder}"
-	[[ ! -e "${Folder}" ]] && echo -e "${Error} Aria2 文件夹重命名失败 !" && rm -rf "${Aria2_Name}.tar.bz2" && rm -rf "/usr/local/${Aria2_Name}" && exit 1
-	rm -rf "${Aria2_Name}.tar.bz2"
-	cd "${Folder}"
-	make install
-	[[ ! -e ${aria2c} ]] && echo -e "${Error} Aria2 主程序安装失败！" && rm -rf "${Folder}" && exit 1
-	chmod +x aria2c
-	echo -e "${Info} Aria2 主程序安装完毕！开始下载配置文件..."
-}
-Download_aria2_conf(){
-	mkdir "${file}" && cd "${file}"
-	wget --no-check-certificate -N "https://raw.githubusercontent.com/heweiye/ToyoDAdoubiBackup/master/other/Aria2/aria2.conf"
-	[[ ! -s "aria2.conf" ]] && echo -e "${Error} Aria2 配置文件下载失败 !" && rm -rf "${file}" && exit 1
-	wget --no-check-certificate -N "https://raw.githubusercontent.com/heweiye/ToyoDAdoubiBackup/master/other/Aria2/dht.dat"
-	[[ ! -s "dht.dat" ]] && echo -e "${Error} Aria2 DHT文件下载失败 !" && rm -rf "${file}" && exit 1
-	echo '' > aria2.session
-	sed -i 's/^rpc-secret=DOUBIToyo/rpc-secret='$(date +%s%N | md5sum | head -c 20)'/g' ${aria2_conf}
-}
-Service_aria2(){
-	if [[ ${release} = "centos" ]]; then
-		if ! wget --no-check-certificate https://raw.githubusercontent.com/heweiye/ToyoDAdoubiBackup/master/service/aria2_centos -O /etc/init.d/aria2; then
-			echo -e "${Error} Aria2服务 管理脚本下载失败 !" && exit 1
-		fi
-		chmod +x /etc/init.d/aria2
-		chkconfig --add aria2
-		chkconfig aria2 on
-	else
-		if ! wget --no-check-certificate https://raw.githubusercontent.com/heweiye/ToyoDAdoubiBackup/master/service/aria2_debian -O /etc/init.d/aria2; then
-			echo -e "${Error} Aria2服务 管理脚本下载失败 !" && exit 1
-		fi
-		chmod +x /etc/init.d/aria2
-		update-rc.d -f aria2 defaults
-	fi
-	echo -e "${Info} Aria2服务 管理脚本下载完成 !"
-}
-Installation_dependency(){
-	if [[ ${release} = "centos" ]]; then
-		yum update
-		yum -y groupinstall "Development Tools"
-		yum install nano -y
-	else
-		apt-get update
-		apt-get install nano build-essential -y
-	fi
-}
-Install_aria2(){
-	check_root
-	[[ -e ${aria2c} ]] && echo -e "${Error} Aria2 已安装，请检查 !" && exit 1
-	check_sys
-	echo -e "${Info} 开始安装/配置 依赖..."
-	Installation_dependency
-	echo -e "${Info} 开始下载/安装 主程序..."
-	check_new_ver
-	Download_aria2
-	echo -e "${Info} 开始下载/安装 配置文件..."
-	Download_aria2_conf
-	echo -e "${Info} 开始下载/安装 服务脚本(init)..."
-	Service_aria2
-	Read_config
-	aria2_RPC_port=${aria2_port}
-	echo -e "${Info} 开始设置 iptables防火墙..."
-	Set_iptables
-	echo -e "${Info} 开始添加 iptables防火墙规则..."
-	Add_iptables
-	echo -e "${Info} 开始保存 iptables防火墙规则..."
-	Save_iptables
-	echo -e "${Info} 所有步骤 安装完毕，开始启动..."
-	Start_aria2
-}
-Start_aria2(){
-	check_installed_status
-	check_pid
-	[[ ! -z ${PID} ]] && echo -e "${Error} Aria2 正在运行，请检查 !" && exit 1
-	/etc/init.d/aria2 start
-}
-Stop_aria2(){
-	check_installed_status
-	check_pid
-	[[ -z ${PID} ]] && echo -e "${Error} Aria2 没有运行，请检查 !" && exit 1
-	/etc/init.d/aria2 stop
-}
-Restart_aria2(){
-	check_installed_status
-	check_pid
-	[[ ! -z ${PID} ]] && /etc/init.d/aria2 stop
-	/etc/init.d/aria2 start
-}
-Set_aria2(){
-	check_installed_status
-	echo && echo -e "你要做什么？
- ${Green_font_prefix}1.${Font_color_suffix}  修改 Aria2 RPC密码
- ${Green_font_prefix}2.${Font_color_suffix}  修改 Aria2 RPC端口
- ${Green_font_prefix}3.${Font_color_suffix}  修改 Aria2 文件下载位置
- ${Green_font_prefix}4.${Font_color_suffix}  修改 Aria2 密码+端口+文件下载位置
- ${Green_font_prefix}5.${Font_color_suffix}  手动 打开配置文件修改" && echo
-	read -e -p "(默认: 取消):" aria2_modify
-	[[ -z "${aria2_modify}" ]] && echo "已取消..." && exit 1
-	if [[ ${aria2_modify} == "1" ]]; then
-		Set_aria2_RPC_passwd
-	elif [[ ${aria2_modify} == "2" ]]; then
-		Set_aria2_RPC_port
-	elif [[ ${aria2_modify} == "3" ]]; then
-		Set_aria2_RPC_dir
-	elif [[ ${aria2_modify} == "4" ]]; then
-		Set_aria2_RPC_passwd_port_dir
-	elif [[ ${aria2_modify} == "5" ]]; then
-		Set_aria2_vim_conf
-	else
-		echo -e "${Error} 请输入正确的数字(1-5)" && exit 1
-	fi
-}
-Set_aria2_RPC_passwd(){
-	read_123=$1
-	if [[ ${read_123} != "1" ]]; then
-		Read_config
-	fi
-	if [[ -z "${aria2_passwd}" ]]; then
-		aria2_passwd_1="空(没有检测到配置，可能手动删除或注释了)"
-	else
-		aria2_passwd_1=${aria2_passwd}
-	fi
-	echo -e "请输入要设置的 Aria2 RPC密码(旧密码为：${Green_font_prefix}${aria2_passwd_1}${Font_color_suffix})"
-	read -e -p "(默认密码: 随机生成 密码请不要包含等号 = 和井号 #):" aria2_RPC_passwd
-	echo
-	[[ -z "${aria2_RPC_passwd}" ]] && aria2_RPC_passwd=$(date +%s%N | md5sum | head -c 20)
-	if [[ "${aria2_passwd}" != "${aria2_RPC_passwd}" ]]; then
-		if [[ -z "${aria2_passwd}" ]]; then
-			echo -e "\nrpc-secret=${aria2_RPC_passwd}" >> ${aria2_conf}
-			if [[ $? -eq 0 ]];then
-				echo -e "${Info} 密码修改成功！新密码为：${Green_font_prefix}${aria2_RPC_passwd}${Font_color_suffix}(因为找不到旧配置参数，所以自动加入配置文件底部)"
-				if [[ ${read_123} != "1" ]]; then
-					Restart_aria2
-				fi
-			else 
-				echo -e "${Error} 密码修改失败！旧密码为：${Green_font_prefix}${aria2_passwd}${Font_color_suffix}"
-			fi
-		else
-			sed -i 's/^rpc-secret='${aria2_passwd}'/rpc-secret='${aria2_RPC_passwd}'/g' ${aria2_conf}
-			if [[ $? -eq 0 ]];then
-				echo -e "${Info} 密码修改成功！新密码为：${Green_font_prefix}${aria2_RPC_passwd}${Font_color_suffix}"
-				if [[ ${read_123} != "1" ]]; then
-					Restart_aria2
-				fi
-			else 
-				echo -e "${Error} 密码修改失败！旧密码为：${Green_font_prefix}${aria2_passwd}${Font_color_suffix}"
-			fi
-		fi
-	else
-		echo -e "${Error} 新密码与旧密码一致，取消..."
-	fi
-}
-Set_aria2_RPC_port(){
-	read_123=$1
-	if [[ ${read_123} != "1" ]]; then
-		Read_config
-	fi
-	if [[ -z "${aria2_port}" ]]; then
-		aria2_port_1="空(没有检测到配置，可能手动删除或注释了)"
-	else
-		aria2_port_1=${aria2_port}
-	fi
-	echo -e "请输入要设置的 Aria2 RPC端口(旧端口为：${Green_font_prefix}${aria2_port_1}${Font_color_suffix})"
-	read -e -p "(默认端口: 6800):" aria2_RPC_port
-	echo
-	[[ -z "${aria2_RPC_port}" ]] && aria2_RPC_port="6800"
-	if [[ "${aria2_port}" != "${aria2_RPC_port}" ]]; then
-		if [[ -z "${aria2_port}" ]]; then
-			echo -e "\nrpc-listen-port=${aria2_RPC_port}" >> ${aria2_conf}
-			if [[ $? -eq 0 ]];then
-				echo -e "${Info} 端口修改成功！新端口为：${Green_font_prefix}${aria2_RPC_port}${Font_color_suffix}(因为找不到旧配置参数，所以自动加入配置文件底部)"
-				Del_iptables
-				Add_iptables
-				Save_iptables
-				if [[ ${read_123} != "1" ]]; then
-					Restart_aria2
-				fi
-			else 
-				echo -e "${Error} 端口修改失败！旧端口为：${Green_font_prefix}${aria2_port}${Font_color_suffix}"
-			fi
-		else
-			sed -i 's/^rpc-listen-port='${aria2_port}'/rpc-listen-port='${aria2_RPC_port}'/g' ${aria2_conf}
-			if [[ $? -eq 0 ]];then
-				echo -e "${Info} 端口修改成功！新密码为：${Green_font_prefix}${aria2_RPC_port}${Font_color_suffix}"
-				Del_iptables
-				Add_iptables
-				Save_iptables
-				if [[ ${read_123} != "1" ]]; then
-					Restart_aria2
-				fi
-			else 
-				echo -e "${Error} 端口修改失败！旧密码为：${Green_font_prefix}${aria2_port}${Font_color_suffix}"
-			fi
-		fi
-	else
-		echo -e "${Error} 新端口与旧端口一致，取消..."
-	fi
-}
-Set_aria2_RPC_dir(){
-	read_123=$1
-	if [[ ${read_123} != "1" ]]; then
-		Read_config
-	fi
-	if [[ -z "${aria2_dir}" ]]; then
-		aria2_dir_1="空(没有检测到配置，可能手动删除或注释了)"
-	else
-		aria2_dir_1=${aria2_dir}
-	fi
-	echo -e "请输入要设置的 Aria2 文件下载位置(旧位置为：${Green_font_prefix}${aria2_dir_1}${Font_color_suffix})"
-	read -e -p "(默认位置: /usr/local/caddy/www/aria2/Download):" aria2_RPC_dir
-	[[ -z "${aria2_RPC_dir}" ]] && aria2_RPC_dir="/usr/local/caddy/www/aria2/Download"
-	echo
-	if [[ -d "${aria2_RPC_dir}" ]]; then
-		if [[ "${aria2_dir}" != "${aria2_RPC_dir}" ]]; then
-			if [[ -z "${aria2_dir}" ]]; then
-				echo -e "\ndir=${aria2_RPC_dir}" >> ${aria2_conf}
-				if [[ $? -eq 0 ]];then
-					echo -e "${Info} 位置修改成功！新位置为：${Green_font_prefix}${aria2_RPC_dir}${Font_color_suffix}(因为找不到旧配置参数，所以自动加入配置文件底部)"
-					if [[ ${read_123} != "1" ]]; then
-						Restart_aria2
+			#############  载入设置  #############
+#设置脚本版本
+export dx_ver="2018-04-26"
+export dx_re=/usr/local/sbin/re
+export dx_re_n=/root/re
+
+#设置颜色控制
+export dco_r="\033[31m" #红 错误
+export dco_g="\033[32m" #绿 菜单
+export dco_y="\033[33m" #黄 警告
+export dco_p="\033[35m" #紫 提示
+export dco_s="\033[36m" #天蓝 正常回显
+export dco_t="\033[0m" #关闭颜色
+export dco_sb="\033[31m失败\033[0m" #红 失败
+export dco_ok="\033[32m成功\033[0m" #绿 成功
+export dco_re="\033[31mReOkey \033[36m" #标识符
+
+#设置检测系统变量1
+export dos_r=''
+export dos_v=''
+export dos_b=''
+export dos_k=''
+
+#设置检测系统变量2
+export SYS_VER=`cat /proc/version`
+export sys_debian="Debian"
+export SSH_DIR=~/.ssh/
+export CON_DIR=/var/spool/cron/crontabs/
+export showip=`ip route show | grep -n 'eth0\s*proto\s*kernel\s*scope\s*link\s*src' | sed 's/^.*src //g' | sed s/metric.*$//g`
+
+#创建检测记录文件
+re_dir=/data/reokey
+mkdir -p ${re_dir}
+reokey_file=${re_dir}/result.re
+reokey_tree=${re_dir}/tree.re
+reokey_key=${re_dir}/keyword.re
+if [ -f "$reokey_file" ]; then
+	rm -rf ${reokey_file}
+fi
+if [ -f "$reokey_tree" ]; then
+	rm -rf ${reokey_tree}
+fi
+
+#检测函数
+function CheckDependence(){
+FullDependence='0';
+for BIN_DEP in `echo "$1" |sed 's/,/\n/g'`
+	do
+		if [[ -n "$BIN_DEP" ]]; then
+			Founded='0';
+			for BIN_PATH in `echo "$PATH" |sed 's/:/\n/g'`
+				do
+					ls $BIN_PATH/$BIN_DEP >/dev/null 2>&1;
+					if [ $? == '0' ]; then
+						Founded='1';
+						break;
 					fi
-				else 
-					echo -e "${Error} 位置修改失败！旧位置为：${Green_font_prefix}${aria2_dir}${Font_color_suffix}"
+				done
+			if [ "$Founded" == '1' ]; then
+				echo -en "[${dco_ok}]\t\t";
+			else
+				FullDependence='1';
+				echo -en "[${dco_sb}]\t\t";
+			fi
+			echo -en "\t${dco_s}$BIN_DEP${dco_t}\n";
+		fi
+	done
+if [ "$FullDependence" == '1' ]; then
+	check_dos_r
+	if [ "$dos_r" == 'CentOS' ]; then
+		echo -ne "\n${dco_sb}! ${dco_s}请执行 '${dco_y}yum install -y${dco_s}' 安装\n\n\n"
+	elif [ "$dos_r" == 'Debian' ]; then
+		echo -ne "\n${dco_sb}! ${dco_s}请执行 '${dco_y}apt-get install -y${dco_s}' 安装\n\n\n"
+	elif [ "$dos_r" == 'Ubuntu' ]; then
+		echo -ne "\n${dco_sb}! ${dco_s}请执行 '${dco_y}apt-get install -y${dco_s}' 安装\n\n\n"
+	else
+		echo -ne "\n${dco_sb}! ${dco_s}请执行 '${dco_y}apt-get install -y${dco_s}' 或者 '${dco_y}yum install -y${dco_s}' 安装\n\n\n"
+	fi
+	exit 1;
+fi
+}
+
+function Check_re(){
+Check_re='0';
+for BIN_DEP in `echo "$1" |sed 's/,/\n/g'`
+	do
+		if [[ -n "$BIN_DEP" ]]; then
+			Founded='0';
+			for BIN_PATH in `echo "$PATH" |sed 's/:/\n/g'`
+				do
+					ls $BIN_PATH/$BIN_DEP >/dev/null 2>&1;
+					if [ $? == '0' ]; then
+						Founded='1';
+						break;
+					fi
+				done
+			if [ "$Founded" == '1' ]; then
+				Check_re='1';
+				echo -en "${dco_r}[自动升级]\t\t";
+			else
+				Check_re='0';
+				echo -en "${dco_r}[自动安装]\t\t";
+			fi
+		fi
+	done
+
+if [ "$Check_re" == '0' ]; then
+	if [ ! -d $dx_re ];then
+		if [ -f $dx_re ];then
+			dx_re_md5=$(md5sum $dx_re|cut -d ' ' -f1)
+			dx_re_n_md5=$(md5sum $dx_re_n|cut -d ' ' -f1)
+				if [ $dx_re_md5 == $dx_re_n_md5 ]; then
+					echo -e "${dco_p} 提示${dco_t}\t${dco_s}代码无需更新 ......${dco_t}"
+				else
+					echo -e "${dco_p} 提示${dco_t}\t${dco_s}代码需要更新 ......${dco_t}"
+					
+					cp -f $0 $dx_re && chmod 777 $dx_re
+						if [ $? -eq 0 ]; then
+							echo -e "${dco_p} 提示${dco_t}\t${dco_s}代码更新完成 ......${dco_t}"
+						else
+							echo -e "${dco_p} 提示${dco_t}\t${dco_s}代码更新失败 ......${dco_t}"
+						fi
 				fi
 			else
-				aria2_dir_2=$(echo "${aria2_dir}"|sed 's/\//\\\//g')
-				aria2_RPC_dir_2=$(echo "${aria2_RPC_dir}"|sed 's/\//\\\//g')
-				sed -i 's/^dir='${aria2_dir_2}'/dir='${aria2_RPC_dir_2}'/g' ${aria2_conf}
-				if [[ $? -eq 0 ]];then
-					echo -e "${Info} 位置修改成功！新位置为：${Green_font_prefix}${aria2_RPC_dir}${Font_color_suffix}"
-					if [[ ${read_123} != "1" ]]; then
-						Restart_aria2
-					fi
-				else 
-					echo -e "${Error} 位置修改失败！旧位置为：${Green_font_prefix}${aria2_dir}${Font_color_suffix}"
+			cp -f $0 $dx_re && chmod 777 $dx_re
+				if [ $? -eq 0 ]; then
+					echo -e "${dco_p} 提示${dco_t}\t${dco_s}完成代码003 ......${dco_t}"
+				else
+					echo -e "${dco_p} 提示${dco_t}\t${dco_s}错误代码003 ......${dco_t}"
 				fi
-			fi
-		else
-			echo -e "${Error} 新位置与旧位置一致，取消..."
 		fi
 	else
-		echo -e "${Error} 新位置文件夹不存在，请检查！新位置为：${Green_font_prefix}${aria2_RPC_dir}${Font_color_suffix}"
+		if [ $dx_re_md5 == $dx_re_n_md5 ]; then
+			rm -rf $dx_re
+				if [ $? -eq 0 ]; then
+					echo -e "${dco_p} 提示${dco_t}\t${dco_s}自动删除目录成功 ......${dco_t}"
+				else
+					echo -e "${dco_p} 提示${dco_t}\t${dco_s}自动删除目录失败 ......${dco_t}"
+				fi
+			cp -f $0 $dx_re && chmod 777 $dx_re
+				if [ $? -eq 0 ]; then
+					echo -e "${dco_p} 提示${dco_t}\t${dco_s}自动安装成功 ......${dco_t}"
+				else
+					echo -e "${dco_p} 提示${dco_t}\t${dco_s}自动安装失败 ......${dco_t}"
+				fi
+		fi		
 	fi
-}
-Set_aria2_RPC_passwd_port_dir(){
-	Read_config
-	Set_aria2_RPC_passwd "1"
-	Set_aria2_RPC_port "1"
-	Set_aria2_RPC_dir "1"
-	Restart_aria2
-}
-Set_aria2_vim_conf(){
-	Read_config
-	aria2_port_old=${aria2_port}
-	echo -e "${Tip} 手动修改配置文件须知（nano 文本编辑器详细使用教程：https://doub.io/linux-jc13/）：
-${Green_font_prefix}1.${Font_color_suffix} 配置文件中含有中文注释，如果你的 服务器系统 或 SSH工具 不支持中文显示，将会乱码(请本地编辑)。
-${Green_font_prefix}2.${Font_color_suffix} 一会自动打开配置文件后，就可以开始手动编辑文件了。
-${Green_font_prefix}3.${Font_color_suffix} 如果要退出并保存文件，那么按 ${Green_font_prefix}Ctrl+X键${Font_color_suffix} 后，输入 ${Green_font_prefix}y${Font_color_suffix} 后，再按一下 ${Green_font_prefix}回车键${Font_color_suffix} 即可。
-${Green_font_prefix}4.${Font_color_suffix} 如果要退出并不保存文件，那么按 ${Green_font_prefix}Ctrl+X键${Font_color_suffix} 后，输入 ${Green_font_prefix}n${Font_color_suffix} 即可。
-${Green_font_prefix}5.${Font_color_suffix} 如果你想在本地编辑配置文件，那么配置文件位置： ${Green_font_prefix}/root/.aria2/aria2.conf${Font_color_suffix} (注意是隐藏目录) 。" && echo
-	read -e -p "如果已经理解 nano 使用方法，请按任意键继续，如要取消请使用 Ctrl+C 。" var
-	nano "${aria2_conf}"
-	Read_config
-	if [[ ${aria2_port_old} != ${aria2_port} ]]; then
-		aria2_RPC_port=${aria2_port}
-		aria2_port=${aria2_port_old}
-		Del_iptables
-		Add_iptables
-		Save_iptables
-	fi
-	Restart_aria2
-}
-Read_config(){
-	status_type=$1
-	if [[ ! -e ${aria2_conf} ]]; then
-		if [[ ${status_type} != "un" ]]; then
-			echo -e "${Error} Aria2 配置文件不存在 !" && exit 1
-		fi
+elif [ "$Check_re" == '1' ]; then
+	d_nver=$(wget --no-check-certificate -qO- "https://raw.githubusercontent.com/reokey/shell/master/re"|grep 'd_ver="'|awk -F "=" '{print $NF}'|sed 's/\"//g'|head -1)
+	[[ -z ${d_nver} ]] && echo -e "${dco_r}错误 检测最新版本失败 !${dco_t}" && exit 0
+	if [[ ${d_nver} != ${d_ver} ]]; then
+		echo ${d_nver} 和 ${d_ver}
+		echo -e "${dco_y}发现新版本[ ${d_nver} ]${dco_t}"
+		wget -N --no-check-certificate https://raw.githubusercontent.com/reokey/shell/master/re && chmod +x re
+		clear
+		echo -e "${dco_y}脚本已更新为最新版本[ ${d_nver} ] !${dco_t}"
 	else
-		conf_text=$(cat ${aria2_conf}|grep -v '#')
-		aria2_dir=$(echo -e "${conf_text}"|grep "dir="|awk -F "=" '{print $NF}')
-		aria2_port=$(echo -e "${conf_text}"|grep "rpc-listen-port="|awk -F "=" '{print $NF}')
-		aria2_passwd=$(echo -e "${conf_text}"|grep "rpc-secret="|awk -F "=" '{print $NF}')
+		echo -e "${dco_y}当前已是最新版本[ ${d_nver} ]!${dco_t}"
 	fi
-	
-}
-View_Aria2(){
-	check_installed_status
-	Read_config
-	ip=$(wget -qO- -t1 -T2 ipinfo.io/ip)
-	if [[ -z "${ip}" ]]; then
-		ip=$(wget -qO- -t1 -T2 api.ip.sb/ip)
-		if [[ -z "${ip}" ]]; then
-			ip=$(wget -qO- -t1 -T2 members.3322.org/dyndns/getip)
-			if [[ -z "${ip}" ]]; then
-				ip="VPS_IP(外网IP检测失败)"
-			fi
-		fi
-	fi
-	[[ -z "${aria2_dir}" ]] && aria2_dir="找不到配置参数"
-	[[ -z "${aria2_port}" ]] && aria2_port="找不到配置参数"
-	[[ -z "${aria2_passwd}" ]] && aria2_passwd="找不到配置参数(或无密码)"
-	clear
-	echo -e "\nAria2 简单配置信息：\n
- 地址\t: ${Green_font_prefix}${ip}${Font_color_suffix}
- 端口\t: ${Green_font_prefix}${aria2_port}${Font_color_suffix}
- 密码\t: ${Green_font_prefix}${aria2_passwd}${Font_color_suffix}
- 目录\t: ${Green_font_prefix}${aria2_dir}${Font_color_suffix}\n"
-}
-View_Log(){
-	[[ ! -e ${aria2_log} ]] && echo -e "${Error} Aria2 日志文件不存在 !" && exit 1
-	echo && echo -e "${Tip} 按 ${Red_font_prefix}Ctrl+C${Font_color_suffix} 终止查看日志" && echo -e "如果需要查看完整日志内容，请用 ${Red_font_prefix}cat ${aria2_log}${Font_color_suffix} 命令。" && echo
-	tail -f ${aria2_log}
-}
-Update_bt_tracker(){
-	check_installed_status
-	check_crontab_installed_status
-	crontab_update_status=$(crontab -l|grep "aria2.sh update-bt-tracker")
-	if [[ -z "${crontab_update_status}" ]]; then
-		echo && echo -e "当前自动更新模式: ${Red_font_prefix}未开启${Font_color_suffix}" && echo
-		echo -e "确定要开启 ${Green_font_prefix}Aria2 自动更新 BT-Tracker服务器${Font_color_suffix} 功能吗？(一般情况下会加强BT下载效果)[Y/n]"
-		read -e -p "注意：该功能会定时重启 Aria2！(默认: y):" crontab_update_status_ny
-		[[ -z "${crontab_update_status_ny}" ]] && crontab_update_status_ny="y"
-		if [[ ${crontab_update_status_ny} == [Yy] ]]; then
-			crontab_update_start
-		else
-			echo && echo "	已取消..." && echo
-		fi
-	else
-		echo && echo -e "当前自动更新模式: ${Green_font_prefix}已开启${Font_color_suffix}" && echo
-		echo -e "确定要关闭 ${Red_font_prefix}Aria2 自动更新 BT-Tracker服务器${Font_color_suffix} 功能吗？(一般情况下会加强BT下载效果)[y/N]"
-		read -e -p "注意：该功能会定时重启 Aria2！(默认: n):" crontab_update_status_ny
-		[[ -z "${crontab_update_status_ny}" ]] && crontab_update_status_ny="n"
-		if [[ ${crontab_update_status_ny} == [Yy] ]]; then
-			crontab_update_stop
-		else
-			echo && echo "	已取消..." && echo
-		fi
-	fi
-}
-crontab_update_start(){
-	crontab -l > "$file_1/crontab.bak"
-	sed -i "/aria2.sh update-bt-tracker/d" "$file_1/crontab.bak"
-	echo -e "\n0 3 * * 1 /bin/bash $file_1/aria2.sh update-bt-tracker" >> "$file_1/crontab.bak"
-	crontab "$file_1/crontab.bak"
-	rm -f "$file_1/crontab.bak"
-	cron_config=$(crontab -l | grep "aria2.sh update-bt-tracker")
-	if [[ -z ${cron_config} ]]; then
-		echo -e "${Error} Aria2 自动更新 BT-Tracker服务器 开启失败 !" && exit 1
-	else
-		echo -e "${Info} Aria2 自动更新 BT-Tracker服务器 开启成功 !"
-		Update_bt_tracker_cron
-	fi
-}
-crontab_update_stop(){
-	crontab -l > "$file_1/crontab.bak"
-	sed -i "/aria2.sh update-bt-tracker/d" "$file_1/crontab.bak"
-	crontab "$file_1/crontab.bak"
-	rm -f "$file_1/crontab.bak"
-	cron_config=$(crontab -l | grep "aria2.sh update-bt-tracker")
-	if [[ ! -z ${cron_config} ]]; then
-		echo -e "${Error} Aria2 自动更新 BT-Tracker服务器 停止失败 !" && exit 1
-	else
-		echo -e "${Info} Aria2 自动更新 BT-Tracker服务器 停止成功 !"
-	fi
-}
-Update_bt_tracker_cron(){
-	check_installed_status
-	check_pid
-	[[ ! -z ${PID} ]] && /etc/init.d/aria2 stop
-	bt_tracker_list=$(wget -qO- https://raw.githubusercontent.com/ngosang/trackerslist/master/trackers_all.txt |awk NF|sed ":a;N;s/\n/,/g;ta")
-	if [ -z "`grep "bt-tracker" ${aria2_conf}`" ]; then
-		sed -i '$a bt-tracker='${bt_tracker_list} "${aria2_conf}"
-		echo -e "${Info} 添加成功..."
-	else
-		sed -i "s@bt-tracker.*@bt-tracker=$bt_tracker_list@g" "${aria2_conf}"
-		echo -e "${Info} 更新成功..."
-	fi
-	/etc/init.d/aria2 start
-}
-Update_aria2(){
-	check_installed_status
-	check_new_ver
-	check_ver_comparison
-}
-Uninstall_aria2(){
-	check_installed_status "un"
-	echo "确定要卸载 Aria2 ? (y/N)"
-	echo
-	read -e -p "(默认: n):" unyn
-	[[ -z ${unyn} ]] && unyn="n"
-	if [[ ${unyn} == [Yy] ]]; then
-		crontab -l > "$file_1/crontab.bak"
-		sed -i "/aria2.sh/d" "$file_1/crontab.bak"
-		crontab "$file_1/crontab.bak"
-		rm -f "$file_1/crontab.bak"
-		check_pid
-		[[ ! -z $PID ]] && kill -9 ${PID}
-		Read_config "un"
-		Del_iptables
-		Save_iptables
-		cd "${Folder}"
-		make uninstall
-		cd ..
-		rm -rf "${aria2c}"
-		rm -rf "${Folder}"
-		rm -rf "${file}"
-		if [[ ${release} = "centos" ]]; then
-			chkconfig --del aria2
-		else
-			update-rc.d -f aria2 remove
-		fi
-		rm -rf "/etc/init.d/aria2"
-		echo && echo "Aria2 卸载完成 !" && echo
-	else
-		echo && echo "卸载已取消..." && echo
-	fi
-}
-Add_iptables(){
-	iptables -I INPUT -m state --state NEW -m tcp -p tcp --dport ${aria2_RPC_port} -j ACCEPT
-	iptables -I INPUT -m state --state NEW -m udp -p udp --dport ${aria2_RPC_port} -j ACCEPT
-}
-Del_iptables(){
-	iptables -D INPUT -m state --state NEW -m tcp -p tcp --dport ${aria2_port} -j ACCEPT
-	iptables -D INPUT -m state --state NEW -m udp -p udp --dport ${aria2_port} -j ACCEPT
-}
-Save_iptables(){
-	if [[ ${release} == "centos" ]]; then
-		service iptables save
-	else
-		iptables-save > /etc/iptables.up.rules
-	fi
-}
-Set_iptables(){
-	if [[ ${release} == "centos" ]]; then
-		service iptables save
-		chkconfig --level 2345 iptables on
-	else
-		iptables-save > /etc/iptables.up.rules
-		echo -e '#!/bin/bash\n/sbin/iptables-restore < /etc/iptables.up.rules' > /etc/network/if-pre-up.d/iptables
-		chmod +x /etc/network/if-pre-up.d/iptables
-	fi
-}
-Update_Shell(){
-	sh_new_ver=$(wget --no-check-certificate -qO- -t1 -T3 "https://raw.githubusercontent.com/4055020/shell/master/aria2.sh"|grep 'sh_ver="'|awk -F "=" '{print $NF}'|sed 's/\"//g'|head -1) && sh_new_type="github"
-	[[ -z ${sh_new_ver} ]] && echo -e "${Error} 无法链接到 Github !" && exit 0
-	if [[ -e "/etc/init.d/aria2" ]]; then
-		rm -rf /etc/init.d/aria2
-		Service_aria2
-	fi
-	wget -N --no-check-certificate "https://raw.githubusercontent.com/4055020/shell/master/aria2.sh" && chmod +x aria2.sh
-	echo -e "脚本已更新为最新版本[ ${sh_new_ver} ] !(注意：因为更新方式为直接覆盖当前运行的脚本，所以可能下面会提示一些报错，无视即可)" && exit 0
-}
-action=$1
-if [[ "${action}" == "update-bt-tracker" ]]; then
-	Update_bt_tracker_cron
-else
-echo && echo -e " Aria2 一键安装管理脚本 ${Red_font_prefix}[v${sh_ver}]${Font_color_suffix}
-  -- Toyo | doub.io/shell-jc4 --
-  
- ${Green_font_prefix} 0.${Font_color_suffix} 升级脚本
-————————————
- ${Green_font_prefix} 1.${Font_color_suffix} 安装 Aria2
- ${Green_font_prefix} 2.${Font_color_suffix} 更新 Aria2
- ${Green_font_prefix} 3.${Font_color_suffix} 卸载 Aria2
-————————————
- ${Green_font_prefix} 4.${Font_color_suffix} 启动 Aria2
- ${Green_font_prefix} 5.${Font_color_suffix} 停止 Aria2
- ${Green_font_prefix} 6.${Font_color_suffix} 重启 Aria2
-————————————
- ${Green_font_prefix} 7.${Font_color_suffix} 修改 配置文件
- ${Green_font_prefix} 8.${Font_color_suffix} 查看 配置信息
- ${Green_font_prefix} 9.${Font_color_suffix} 查看 日志信息
- ${Green_font_prefix}10.${Font_color_suffix} 配置 自动更新 BT-Tracker服务器
-————————————" && echo
-if [[ -e ${aria2c} ]]; then
-	check_pid
-	if [[ ! -z "${PID}" ]]; then
-		echo -e " 当前状态: ${Green_font_prefix}已安装${Font_color_suffix} 并 ${Green_font_prefix}已启动${Font_color_suffix}"
-	else
-		echo -e " 当前状态: ${Green_font_prefix}已安装${Font_color_suffix} 但 ${Red_font_prefix}未启动${Font_color_suffix}"
-	fi
-else
-	echo -e " 当前状态: ${Red_font_prefix}未安装${Font_color_suffix}"
 fi
-echo
-read -e -p " 请输入数字 [0-10]:" num
-case "$num" in
-	0)
-	Update_Shell
+}
+
+
+
+			
+			#############  命令开始  #############
+
+#清理命令
+clear_command(){
+rm -rf dxhz*
+}
+
+#错误返回
+error_command(){
+seconds_left=5
+echo -e "${dco_r} 按键非指定命令,返回主菜单.${dco_t}"
+while [ $seconds_left -gt 0 ];do
+echo -n $seconds_left
+sleep 1
+seconds_left=$(($seconds_left - 1))
+echo -ne "\r     \r"
+done
+dx_menu
+}
+
+#正确返回
+correct_command(){
+seconds_left=3
+echo -e "${dco_y}${seconds_left}秒后返回主菜单.${dco_t}"
+while [ $seconds_left -gt 0 ];do
+echo -n $seconds_left
+sleep 1
+seconds_left=$(($seconds_left - 1))
+echo -ne "\r     \r"
+done
+dx_menu
+}
+
+#检测系统
+check_dos_r()
+{
+if [ -e /etc/redhat-release ]; then
+  dos_r=CentOS
+  [ ! -e "$(which lsb_release)" ] && { yum -y install redhat-lsb-core; clear; }
+  dos_v=$(lsb_release -sr | awk -F. '{print $1}')
+  [ "${dos_v}" == '17' ] && dos_v=7
+elif [ -n "$(grep 'Amazon Linux' /etc/issue)" ]; then
+  dos_r=CentOS
+  dos_v=7
+elif [ -n "$(grep 'bian' /etc/issue)" -o "$(lsb_release -is 2>/dev/null)" == "Debian" ]; then
+  dos_r=Debian
+  [ ! -e "$(which lsb_release)" ] && { apt-get -y update; apt-get -y install lsb-release; clear; }
+  dos_v=$(lsb_release -sr | awk -F. '{print $1}')
+elif [ -n "$(grep 'Deepin' /etc/issue)" -o "$(lsb_release -is 2>/dev/null)" == "Deepin" ]; then
+  dos_r=Debian
+  [ ! -e "$(which lsb_release)" ] && { apt-get -y update; apt-get -y install lsb-release; clear; }
+  dos_v=8
+elif [ -n "$(grep -w 'Kali' /etc/issue)" -o "$(lsb_release -is 2>/dev/null)" == "Kali" ]; then
+  dos_r=Debian
+  [ ! -e "$(which lsb_release)" ] && { apt-get -y update; apt-get -y install lsb-release; clear; }
+  if [ -n "$(grep 'VERSION="2016.*"' /etc/os-release)" ]; then
+    dos_v=8
+  elif [ -n "$(grep 'VERSION="2017.*"' /etc/os-release)" ]; then
+    dos_v=9
+  elif [ -n "$(grep 'VERSION="2018.*"' /etc/os-release)" ]; then
+    dos_v=9
+  fi
+elif [ -n "$(grep 'Ubuntu' /etc/issue)" -o "$(lsb_release -is 2>/dev/null)" == "Ubuntu" -o -n "$(grep 'Linux Mint' /etc/issue)" ]; then
+  dos_r=Ubuntu
+  [ ! -e "$(which lsb_release)" ] && { apt-get -y update; apt-get -y install lsb-release; clear; }
+  dos_v=$(lsb_release -sr | awk -F. '{print $1}')
+  [ -n "$(grep 'Linux Mint 18' /etc/issue)" ] && dos_v=16
+elif [ -n "$(grep 'elementary' /etc/issue)" -o "$(lsb_release -is 2>/dev/null)" == 'elementary' ]; then
+  dos_r=Ubuntu
+  [ ! -e "$(which lsb_release)" ] && { apt-get -y update; apt-get -y install lsb-release; clear; }
+  dos_v=16
+else
+  echo "${CFAILURE}Does not support this OS, Please contact the author! ${CEND}"
+  kill -9 $$
+fi
+
+LIBC_YN=$(awk -v A=$(getconf -a | grep GNU_LIBC_VERSION | awk '{print $NF}') -v B=2.14 'BEGIN{print(A>=B)?"0":"1"}')
+[ ${LIBC_YN} == '0' ] && GLIBC_FLAG=linux-glibc_214 || GLIBC_FLAG=linux
+
+if uname -m | grep -Eqi "arm"; then
+  armplatform="y"
+  if uname -m | grep -Eqi "armv7"; then
+    TARGET_ARCH="armv7"
+  elif uname -m | grep -Eqi "armv8"; then
+    TARGET_ARCH="arm64"
+  else
+    TARGET_ARCH="unknown"
+  fi
+fi
+
+if [ "$(getconf WORD_BIT)" == "32" ] && [ "$(getconf LONG_BIT)" == "64" ]; then
+  dos_b=64
+else
+  dos_b=32
+fi
+
+dos_k=$( uname -r )
+
+THREAD=$(grep 'processor' /proc/cpuinfo | sort -u | wc -l)
+
+# Percona binary
+#if [ "${dos_v}" == '5' -o "${dos_v}" == '6' ]; then
+#  sslLibVer=ssl098
+#elif [ "${dos_v}" == '7' -o "${dos_v}" == '12' ]; then
+#  sslLibVer=ssl100
+#elif [ "${dos_v}" == '6' -o "${dos_v}" == '8' -o "${dos_v}" == '14' ]; then
+#  sslLibVer=ssl101
+#elif [ "${dos_v}" == '7' -o "${dos_v}" == '9' -o ${dos_v} -ge 16 >/dev/null 2>&1 ]; then
+#  sslLibVer=ssl102
+#else
+#  sslLibVer=unknown
+#fi
+}
+
+check_fun()
+{
+	# release information
+	echo -e "${dco_s}----------------------------------------------------${dco_t}" >> $reokey_file
+	echo -e "${dco_g}发行版本信息${dco_t}" >> $reokey_file
+	echo -e "${dco_s}----------------------------------------------------${dco_t}" >> $reokey_file
+	cat /etc/*-release >> $reokey_file 2>&1
+	if [[ $? -eq 0 ]]
+	then
+		echo >> $reokey_file
+		echo -e "${dco_re}发行版本信息 ...... ${dco_ok}"
+	else
+		echo -e "${dco_re}发行版本信息 ...... ${dco_sb}"
+	fi
+
+	# ifconfig
+	echo -e "${dco_s}----------------------------------------------------${dco_t}" >> $reokey_file
+	echo -e "${dco_g}网络地址信息${dco_t}" >> $reokey_file
+	echo -e "${dco_s}----------------------------------------------------${dco_t}" >> $reokey_file
+	ip address show >> $reokey_file 2>&1
+	if [[ $? -eq 0 ]]
+	then
+		echo >> $reokey_file
+		echo -e "${dco_re}网络地址信息 ...... ${dco_ok}"
+	else
+		echo -e "${dco_re}网络地址信息 ...... ${dco_sb}"
+	fi
+
+	# arp
+	echo -e "${dco_s}----------------------------------------------------${dco_t}" >> $reokey_file
+	echo -e "${dco_g}A网络缓冲信息${dco_t}" >> $reokey_file
+	echo -e "${dco_s}----------------------------------------------------${dco_t}" >> $reokey_file
+	arp -v >> $reokey_file 2>&1
+	if [[ $? -eq 0 ]]
+	then
+		echo >> $reokey_file
+		echo -e "${dco_re}网络缓冲信息 ...... ${dco_ok}"
+	else
+		echo -e "${dco_re}网络缓冲信息 ...... ${dco_sb}"
+	fi
+
+	# route
+	echo -e "${dco_s}----------------------------------------------------${dco_t}" >> $reokey_file
+	echo -e "${dco_g}路由信息${dco_t}" >> $reokey_file
+	echo -e "${dco_s}----------------------------------------------------${dco_t}" >> $reokey_file
+	route -v >> $reokey_file 2>&1
+	if [[ $? -eq 0 ]]
+	then
+		echo >> $reokey_file
+		echo -e "${dco_re}路由网关信息 ...... ${dco_ok}"
+	else
+		echo -e "${dco_re}路由网关信息 ...... ${dco_sb}"
+	fi
+
+	# /etc/passwd
+	echo -e "${dco_s}----------------------------------------------------${dco_t}" >> $reokey_file
+	echo -e "${dco_g}密码文件信息${dco_t}" >> $reokey_file
+	echo -e "${dco_s}----------------------------------------------------${dco_t}" >> $reokey_file
+	if [ "$userinfo" ]
+	then
+		echo -e "\n$userinfo" >> $reokey_file 2>&1
+	else
+		:
+	fi
+	hashesinpasswd=`grep -v '^[^:]*:[x]' /etc/passwd 2>/dev/null`
+	if [ "$hashesinpasswd" ]
+	then
+		echo -e "\e[00;33mIt looks like we have password hashes in 密码文件信息!\e[00m\n$hashesinpasswd" >> $reokey_file 2>&1
+	else
+		:
+	fi
+	if [[ $? -eq 0 ]]
+	then
+		echo >> $reokey_file
+		echo -e "${dco_re}密码文件信息 ...... ${dco_ok}"
+	else
+		echo -e "${dco_re}密码文件信息 ...... ${dco_sb}"
+	fi
+
+	# /etc/shadow
+	echo -e "${dco_s}----------------------------------------------------${dco_t}" >> $reokey_file
+	echo -e "${dco_g}系统提交文件信息${dco_t}" >> $reokey_file
+	echo -e "${dco_s}----------------------------------------------------${dco_t}" >> $reokey_file
+	cat /etc/shadow >> $reokey_file 2>&1
+	if [[ $? -eq 0 ]]
+	then
+		echo >> $reokey_file
+		echo -e "${dco_re}提交文件信息 ...... ${dco_ok}"
+	else
+		echo -e "${dco_re}提交文件信息 ...... ${dco_sb}"
+	fi
+
+	# /etc/sudoers
+	echo -e "${dco_s}----------------------------------------------------${dco_t}" >> $reokey_file
+	echo -e "${dco_g}系统提交文件信息${dco_t}" >> $reokey_file
+	echo -e "${dco_s}----------------------------------------------------${dco_t}" >> $reokey_file
+	cat /etc/sudoers 2>/dev/null | grep -v -e '^$' | grep -v "#" >> $reokey_file 2>&1
+	if [[ $? -eq 0 ]]
+	then
+		echo >> $reokey_file
+		echo -e "${dco_re}密码镜像文件 ...... ${dco_ok}"
+	else
+		echo -e "${dco_re}密码镜像文件 ...... ${dco_sb}"
+	fi
+
+	# password policy information
+	echo -e "${dco_s}----------------------------------------------------${dco_t}" >> $reokey_file
+	echo -e "${dco_g}密码策略信息${dco_t}" >> $reokey_file
+	echo -e "${dco_s}----------------------------------------------------${dco_t}" >> $reokey_file
+	cat /etc/login.defs 2>/dev/null | grep -v -e '^$' | grep -v "#" >> $reokey_file 2>&1
+	if [[ $? -eq 0 ]]
+	then
+		echo >> $reokey_file
+		echo -e "${dco_re}密码策略信息 ...... ${dco_ok}"
+	else
+		echo -e "${dco_re}密码策略信息 ...... ${dco_sb}"
+	fi
+
+	# /root
+	echo -e "${dco_s}----------------------------------------------------${dco_t}" >> $reokey_file
+	echo -e "${dco_g}检查根目录${dco_t}" >> $reokey_file
+	echo -e "${dco_s}----------------------------------------------------${dco_t}" >> $reokey_file
+	ls -ahl /root/ >> $reokey_file 2>&1
+	if [[ $? -eq 0 ]]
+	then
+		echo >> $reokey_file
+		echo -e "${dco_re}检查根目录信 ...... ${dco_ok}"
+	else
+		echo -e "${dco_re}检查根目录信 ...... ${dco_sb}"
+	fi
+
+	# netstat
+	echo -e "${dco_s}----------------------------------------------------${dco_t}" >> $reokey_file
+	echo -e "${dco_g}网络状态${dco_t}" >> $reokey_file
+	echo -e "${dco_s}------------------TCP---PORT------------------------${dco_t}" >> $reokey_file
+	netstat -ReOkeyp >> $reokey_file 2>&1
+	echo -e "${dco_s}------------------UDP---PORT------------------------${dco_t}" >> $reokey_file
+	netstat -anup >> $reokey_file 2>&1
+	if [[ $? -eq 0 ]]
+	then
+		echo >> $reokey_file
+		echo -e "${dco_re}网络状态 ...... ${dco_ok}"
+	else
+		echo -e "${dco_re}网络状态 ...... ${dco_sb}"
+	fi
+
+	# process
+	echo -e "${dco_s}----------------------------------------------------${dco_t}" >> $reokey_file
+	echo -e "${dco_g}进程信息${dco_t}" >> $reokey_file
+	echo -e "${dco_s}----------------------------------------------------${dco_t}" >> $reokey_file
+	ps aux >> $reokey_file 2>&1
+	if [[ $? -eq 0 ]]
+	then
+		echo >> $reokey_file
+		echo -e "${dco_re}进程信息 ...... ${dco_ok}"
+	else
+		echo -e "${dco_re}进程信息 ...... ${dco_sb}"
+	fi
+
+	# services
+	echo -e "${dco_s}----------------------------------------------------${dco_t}" >> $reokey_file
+	echo -e "${dco_g}服务信息${dco_t}" >> $reokey_file
+	echo -e "${dco_s}----------------------------------------------------${dco_t}" >> $reokey_file
+	cat /etc/services 2>/dev/null | grep -v "#" >> $reokey_file 2>&1
+	if [[ $? -eq 0 ]]
+	then
+		echo >> $reokey_file
+		echo -e "${dco_re}服务信息 ...... ${dco_ok}"
+	else
+		echo -e "${dco_re}服务信息 ...... ${dco_sb}"
+	fi
+
+	# bash env
+	echo -e "${dco_s}----------------------------------------------------${dco_t}" >> $reokey_file
+	echo -e "${dco_g}Bash Env${dco_t}" >> $reokey_file
+	echo -e "${dco_s}----------------------------------------------------${dco_t}" >> $reokey_file
+	echo -e "${dco_g}当前用户 ${dco_t}" >> $reokey_file
+	echo -e "${dco_s}-----------------------${dco_t}" >> $reokey_file
+	envinfo=`env 2>/dev/null | grep -v 'LS_COLORS' 2>/dev/null`
+	if [ "$envinfo" ]
+	then
+		echo -e "\n$envinfo" >> $reokey_file 2>&1
+		echo -e "${dco_s}----------------------------------------------------${dco_t}" >> $reokey_file
+	else
+		:
+	fi
+	cat ~/.bashrc 2>/dev/null | grep -v -e '^$' | grep -v "#" >> $reokey_file 2>&1
+	echo -e "${dco_s}----------------------------------------------------${dco_t}" >> $reokey_file
+	echo $PATH >> $reokey_file 2>&1
+	echo -e "${dco_s}-----------------------${dco_t}" >> $reokey_file
+	echo -e "${dco_g}环境变量 ${dco_t}" >> $reokey_file
+	echo -e "${dco_s}-----------------------${dco_t}" >> $reokey_file
+	cat /etc/profile 2>/dev/null | grep -v -e '^$' | grep -v "#" >> $reokey_file 2>&1
+	if [[ $? -eq 0 ]]
+	then
+		echo >> $reokey_file
+		echo -e "${dco_re}环境变量 ...... ${dco_ok}"
+	else
+		echo -e "${dco_re}环境变量 ...... ${dco_sb}"
+	fi
+
+	# command history
+	HISTFILE=~/.bash_history
+	export HISTTIMEFORMAT="%Y-%m-%d:%H-%M-%S:"`whoami`": "
+	set -o history
+	echo -e "${dco_s}----------------------------------------------------${dco_t}" >> $reokey_file
+	echo -e "${dco_g}命令历史${dco_t}" >> $reokey_file
+	echo -e "${dco_s}----------------------------------------------------${dco_t}" >> $reokey_file
+	history >> $reokey_file 2>&1
+	echo -e "${dco_s}----------------------------------------------------${dco_t}" >> $reokey_file
+	cat $HISTFILE >> $reokey_file 2>&1
+	if [[ $? -eq 0 ]]
+	then
+		echo >> $reokey_file
+		echo -e "${dco_re}命令历史 ...... ${dco_ok}"
+	else
+		echo -e "${dco_re}命令历史 ...... ${dco_sb}"
+	fi
+
+	# user login info
+	echo -e "${dco_s}----------------------------------------------------${dco_t}" >> $reokey_file
+	echo -e "${dco_g}登录信息${dco_t}" >> $reokey_file
+	echo -e "${dco_s}----------------------------------------------------${dco_t}" >> $reokey_file
+	w >> $reokey_file 2>&1
+	echo -e "${dco_s}----------------------------------------------------${dco_t}" >> $reokey_file
+	last >> $reokey_file 2>&1
+	echo -e "${dco_s}----------------------------------------------------${dco_t}" >> $reokey_file
+	lastlog >> $reokey_file 2>&1
+	if [[ $? -eq 0 ]]
+	then
+		echo >> $reokey_file
+		echo -e "${dco_re}登录信息 ...... ${dco_ok}"
+	else
+		echo -e "${dco_re}登录信息 ...... ${dco_sb}"
+	fi
+
+	# hosts
+	echo -e "${dco_s}----------------------------------------------------${dco_t}" >> $reokey_file
+	echo -e "${dco_g}主机信息${dco_t}" >> $reokey_file
+	echo -e "${dco_s}----------------------------------------------------${dco_t}" >> $reokey_file
+	find /etc /home -type f \( -name "*.rhosts" -o -name "*.equiv" \) >> $reokey_file 2>&1
+	echo -e "${dco_s}----------------------------------------------------${dco_t}" >> $reokey_file
+	cat /etc/hosts >> $reokey_file 2>&1
+	if [[ $? -eq 0 ]]
+	then
+		echo >> $reokey_file
+		echo -e "${dco_re}主机信息 ...... ${dco_ok}"
+	else
+		echo -e "${dco_re}主机信息 ...... ${dco_sb}"
+	fi
+
+	# fstab
+	echo -e "${dco_s}----------------------------------------------------${dco_t}" >> $reokey_file
+	echo -e "${dco_g}安装信息${dco_t}" >> $reokey_file
+	echo -e "${dco_s}----------------------------------------------------${dco_t}" >> $reokey_file
+	cat /etc/fstab >> $reokey_file 2>&1
+	if [[ $? -eq 0 ]]
+	then
+		echo >> $reokey_file
+		echo -e "${dco_re}挂载信息 ...... ${dco_ok}"
+	else
+		echo -e "${dco_re}挂载信息 ...... ${dco_sb}"
+	fi
+
+	# ssh authkey config
+	echo -e "${dco_s}----------------------------------------------------${dco_t}" >> $reokey_file
+	echo -e "${dco_g}SSH密钥设置信息${dco_t}" >> $reokey_file
+	echo -e "${dco_s}----------------------------------------------------${dco_t}" >> $reokey_file
+	sshfiles=`find / \( -name "id_dsa*" -o -name "id_rsa*" -o -name "known_hosts" -o -name "authorized_hosts" -o -name "authorized_keys" \) -exec ls -la {} 2>/dev/null \;`
+	if [ "$sshfiles" ]; then
+		echo -e "\e[00;31m在下列位置找到的SSH密钥/主机信息：\e[00m\n$sshfiles" >> $reokey_file 2>&1
+		echo -e "\n" >> $reokey_file 2>&1
+	else
+		:
+	fi
+	if [ -d "${SSH_DIR}" ]
+	then
+		for i in `ls -1 ${SSH_DIR} >> $reokey_file 2>&1`
+		do
+			cat ${SSH_DIR}${i} >> $reokey_file 2>&1
+		done
+		if [[ $? -eq 0 ]]
+		then
+			echo >> $reokey_file
+			echo -e "${dco_re}SSH 密钥 ...... ${dco_ok}"
+		else
+			echo -e "${dco_re}SSH 密钥 ...... ${dco_sb}"
+		fi
+	else
+		echo -e "${dco_re}SSH 密钥 ...... ${dco_sb}"
+		echo -e "${dco_re}.ssh 没有这样的文件或目录${dco_t}" >> $reokey_file
+	fi
+
+	# crontab
+	echo -e "${dco_s}----------------------------------------------------${dco_t}" >> $reokey_file
+	echo -e "${dco_g}定时任务设置${dco_t}" >> $reokey_file
+	echo -e "${dco_s}----------------------------------------------------${dco_t}" >> $reokey_file
+	ls -al /etc/cron* >> $reokey_file 2>&1
+	echo -e "${dco_s}----------------------------------------------------${dco_t}" >> $reokey_file
+	cat /etc/rc.local >> $reokey_file 2>&1
+	echo -e "${dco_s}----------------------------------------------------${dco_t}" >> $reokey_file
+	cut -d ":" -f 1 /etc/passwd | xargs -n1 crontab -l -u >> $reokey_file 2>&1
+	echo -e "${dco_s}----------------------------------------------------${dco_t}" >> $reokey_file
+	if [ -d "${CON_DIR}" ]
+	then
+		for i in `ls -1 ${CON_DIR} >> $reokey_file 2>&1`
+		do
+			cat ${CON_DIR}${i} >> $reokey_file 2>&1
+		done
+		if [[ $? -eq 0 ]]
+		then
+			echo >> $reokey_file
+			echo -e "${dco_re}定时任务 ...... ${dco_ok}"
+		else
+			echo -e "${dco_re}定时任务 ...... ${dco_sb}"
+		fi
+	else
+		echo -e "${dco_re}定时任务 ...... ${dco_sb}"
+		echo -e "${dco_re} 没有这样的文件或目录${dco_t}" >> $reokey_file
+	fi
+}
+
+check_tree()
+{
+# sensitive data
+a_dir=("/etc/" "/opt/" "/var/" "/home/" "/root/" "/usr/")
+# a_file=("redis.conf" "mongodb.conf" "server.xml" "vsftpd.conf" "ldap.conf" "nginx.conf" "apache2.conf" "smb.conf")
+if command -v tree > /dev/null 2>&1; then
+	if [[ -n $1 ]]; then
+		for i in ${a_dir[@]}
+		do
+			echo -e "${dco_s}----------------------------------------------------${dco_t}" >> $reokey_tree
+			echo -e "${dco_g}${i}${dco_t}" >> $reokey_tree
+			echo -e "${dco_s}----------------------------------------------------${dco_t}" >> $reokey_tree
+			tree -L $1 ${i} >> $reokey_tree 2>&1
+		done
+		if [[ $? -eq 0 ]]
+		then
+			echo >> $reokey_file
+			echo -e "${dco_re}目录结构信息 ...... ${dco_ok}"
+		else
+			echo -e "${dco_re}目录结构信息 ...... ${dco_sb}"
+		fi
+	else
+		for i in ${a_dir[@]}
+		do
+			echo -e "${dco_s}----------------------------------------------------${dco_t}" >> $reokey_tree
+			echo -e "${dco_g}${i}${dco_t}" >> $reokey_tree
+			echo -e "${dco_s}----------------------------------------------------${dco_t}" >> $reokey_tree
+			tree ${i} >> $reokey_tree 2>&1
+		done
+		if [[ $? -eq 0 ]]
+		then
+			echo >> $reokey_file
+			echo -e "${dco_re}目录结构信息 ...... ${dco_ok}"
+		else
+			echo -e "${dco_re}目录结构信息 ...... ${dco_sb}"
+		fi
+	fi
+else
+	for s in ${a_dir[@]}
+	do
+		echo -e "${dco_s}----------------------------------------------------${dco_t}" >> $reokey_tree
+		echo -e "${dco_g}${dco_s}${dco_t}" >> $reokey_tree
+		echo -e "${dco_s}----------------------------------------------------${dco_t}" >> $reokey_tree
+		ls -R -t -s -a ${dco_s} >> tree.dxl 2>&1
+	done
+	if [[ $? -eq 0 ]]
+	then
+		echo >> $reokey_file
+		echo -e "${dco_re}目录结构信息 ...... ${dco_ok}"
+	else
+		echo -e "${dco_re}目录结构信息 ...... ${dco_sb}"
+	fi
+fi
+}
+
+check_key()
+{
+if [[ -n $1 ]]
+then
+	echo -e "${dco_s}----------------------------------------------------${dco_t}" >> $reokey_key
+	echo -e "${dco_g}关键信息信息${dco_t}" >> $reokey_key
+	echo -e "${dco_s}----------------------------------------------------${dco_t}" >> $reokey_key
+	find / -maxdepth 4 -name *.conf -type f -exec grep -Hn $1 {} \; >> $reokey_key 2>&1
+	find / -maxdepth 4 -name *.ini -type f -exec grep -Hn $1 {} \; >> $reokey_key 2>&1
+	find / -maxdepth 4 -name *.log -type f -exec grep -Hn $1 {} \; >> $reokey_key 2>&1
+	if [[ $? -eq 0 ]]
+	then
+		echo >> $reokey_key
+		echo -e "${dco_re}关键信息信息 ...... ${dco_ok}"
+	else
+		echo -e "${dco_re}关键信息信息 ...... ${dco_sb}"
+	fi
+else
+	:
+fi
+}
+
+
+
+#检测软件
+check_Python()
+{
+V1=2
+V2=6
+V3=5
+U_V1=`python -V 2>&1|awk '{print $2}'|awk -F '.' '{print $1}'`
+U_V2=`python -V 2>&1|awk '{print $2}'|awk -F '.' '{print $2}'`
+U_V3=`python -V 2>&1|awk '{print $2}'|awk -F '.' '{print $3}'`
+#	if [ $U_V1 -lt $V1 ];then
+#		echo 'Your python version is not OK!(1)'
+#		exit 1
+#	elif [ $U_V1 -eq $V1 ];then
+#		if [ $U_V2 -lt $V2 ];then
+#			echo 'Your python version is not OK!(2)'
+#			exit 1
+#		elif [ $U_V2 -eq $V2 ];then
+#			if [ $U_V3 -lt $V3 ];then
+#				echo 'Your python version is not OK!(3)'
+#				exit 1
+#			fi
+#		fi
+#	fi
+#	echo Your python version is OK!
+}
+
+
+check_v01()
+{
+	v01=wget
+	x=`rpm -qa | grep $v01`
+	if [ `rpm -qa | grep $v01 |wc -l` -ne 0 ];then
+	s01="$v01       - $st1"
+	else
+	s01="$v01       - $st2"
+	fi
+}
+check_v02()
+{
+	v02=curl
+	x=`rpm -qa | grep $v02`
+	if [ `rpm -qa | grep $v02 |wc -l` -ne 0 ];then
+	s02="$v02       - $st1"
+	else
+	s02="$v02       - $st2"
+	fi
+}
+check_v03()
+{
+	v03=git
+	x=`rpm -qa | grep $v03`
+	if [ `rpm -qa | grep $v03 |wc -l` -ne 0 ];then
+	s03="$v03        - $st1"
+	else
+	s03="$v03        - $st2"
+	fi
+}
+check_v04()
+{
+	v04=pip
+	x=`rpm -qa | grep $v04`
+	if [ `rpm -qa | grep $v04 |wc -l` -ne 0 ];then
+	s04="$v04        - $st1"
+	else
+	s04="$v04        - $st2"
+	fi
+}
+check_v05()
+{
+	v05=gcc
+	x=`rpm -qa | grep $v05`
+	if [ `rpm -qa | grep $v05 |wc -l` -ne 0 ];then
+	s05="$v05        - $st1"
+	else
+	s05="$v05        - $st2"
+	fi
+}
+check_v06()
+{
+	v06=make
+	x=`rpm -qa | grep $v06`
+	if [ `rpm -qa | grep $v06 |wc -l` -ne 0 ];then
+	s06="$v06       - $st1"
+	else
+	s06="$v06       - $st2"
+	fi
+}
+check_v07()
+{
+	v07=screen
+	x=`rpm -qa | grep $v07`
+	if [ `rpm -qa | grep $v07 |wc -l` -ne 0 ];then
+	s07="$v07     - $st1"
+	else
+	s07="$v07     - $st2"
+	fi
+}
+
+#一键更新脚本
+update_re(){
+	clear
+	menu_ver
+	echo -e "${dco_y}当前版本为 [ ${d_ver} ],按[任意键]开始更新版本,或按 Ctrl+C 取消.${dco_t}"
+	read -n1 -p "" answer
+	case $answer in
+		+)
+			dx_menu
+			;;
+		-)
+			exit
+			;;
+		*)
+			d_nver=$(wget --no-check-certificate -qO- "https://raw.githubusercontent.com/reokey/shell/master/dx"|grep 'd_ver="'|awk -F "=" '{pint $NF}'|sed 's/\"//g'|head -1)
+			[[ -z ${d_nver} ]] && echo -e "${dco_r}错误 检测最新版本失败 !${dco_t}" && exit 0
+			if [[ ${d_nver} != ${d_ver} ]]; then
+				clear
+				menu_ver
+				echo -e "${dco_y}发现新版本[ ${d_nver} ]，按[任意键]开始更新，或按 Ctrl+C 取消${dco_t}"
+				read -n1 -p "" answer
+				case $answer in
+					+)
+						dx_menu
+						;;
+					-)
+						exit
+						;;
+					*)
+						wget -N --no-check-certificate https://raw.githubusercontent.com/reokey/shell/master/re && chmod +x re
+						clear
+						menu_ver
+						echo -e "${dco_y}脚本已更新为最新版本[ ${d_nver} ] !${dco_t}"
+						;;
+				esac
+				exit 0
+			else
+			clear
+			menu_ver
+			echo -e "${dco_y}当前已是最新版本[ ${d_nver} ]!${dco_t}"
+			correct_command
+			fi
+			;;
+	esac
+	exit 0
+}
+
+#脚本必备组件
+reokey_module(){
+	clear
+	menu_ver
+	echo -e "${dco_g}───────────────────────────────── 一 键 必 备  ─────────────────────────────────${dco_t}"
+	#检测软件
+	st1=已安装
+	st2=未装或未被检测
+	check_v01
+	echo -e "${dco_g}  $s01 ${dco_t}"
+	check_v02
+	echo -e "${dco_g}  $s02 ${dco_t}"
+	check_v03
+	echo -e "${dco_g}  $s03 ${dco_t}"
+	check_v04
+	echo -e "${dco_g}  $s04 ${dco_t}"
+	check_v05
+	echo -e "${dco_g}  $s05 ${dco_t}"
+	check_v06
+	echo -e "${dco_g}  $s06 ${dco_t}"
+	check_v07
+	echo -e "${dco_g}  $s07 ${dco_t}"
+	echo
+	opst="检测当前系统为$dos_r $dos_b位 请按任意键继续... 主菜单+ / 退出-"
+	if [[ -f /etc/redhat-release ]]; then
+		module_centos
+	elif cat /etc/issue | grep -q -E -i "debian"; then
+		module_debian
+	elif cat /etc/issue | grep -q -E -i "ubuntu"; then
+		module_ubuntu
+	elif cat /etc/issue | grep -q -E -i "centos|red hat|redhat"; then
+		module_centos
+	elif cat /proc/version | grep -q -E -i "debian"; then
+		module_debian
+	elif cat /proc/version | grep -q -E -i "ubuntu"; then
+		module_ubuntu
+	elif cat /proc/version | grep -q -E -i "centos|red hat|redhat"; then
+		module_centos
+	fi
+}
+
+#脚本必备组件centos
+module_centos(){
+	echo -e "${dco_g}当前系统为 Centos $dos_b位 请按任意键继续...主菜单+ / 退出-${dco_t}"
+	read -n1 -p "" answer
+	case $answer in
+		+)
+			dx_menu
+			;;
+		-)
+			exit
+			;;
+		*)
+			yum -y install reinstall gcc gcc-c++ bzip2 make vixie-cron flex ncurses-devel wget patch ntp libxml2 libxml2-devel libevent m4 autoconf zip unzip libjpeg libjpeg-devel gd gd-devel freetype freetype-devel libpng libpng-devel openssl openssl-devel file libtool libtool-libs gmp-devel pspell-devel parted zlib perl mod_perl-devel apr-util ftp readline-devel readline-devel apr apr-util curl-devel screen
+			reokey_module
+			;;
+	esac
+	exit 0
+}
+
+#脚本必备组件debian
+module_debian(){
+	echo -e "${dco_g}当前系统为 Debian $dos_b位 请按任意键继续...主菜单+ / 退出-${dco_t}"
+	read -n1 -p "" answer
+	case $answer in
+		+)
+			dx_menu
+			;;
+		-)
+			exit
+			;;
+		*)
+			apt-get -y install gcc g++ ssh make bzip2 flex vim bison libtool libncurses5-dev libncurses5 libncurses5-dev libncurses5-dev libpcrecpp0 patch ntpdate openssl libssl-dev build-essential file gawk binutils parted zip unzip libperl-dev perl ftp libreadline-dev screen
+			reokey_module
+			;;
+	esac
+	exit 0
+}
+
+#脚本必备组件ubuntu
+module_ubuntu(){
+	echo -e "${dco_g}当前系统为 Ubuntu $dos_b位 请按任意键继续...主菜单+ / 退出-${dco_t}"
+	read -n1 -p "" answer
+	case $answer in
+		+)
+			dx_menu
+			;;
+		-)
+			exit
+			;;
+		*)
+			apt-get -y install gcc g++ ssh make bzip2 flex vim bison libtool libncurses5-dev libncurses5 libncurses5-dev libncurses5-dev libpcrecpp0 patch ntpdate openssl libssl-dev build-essential file gawk binutils parted zip unzip libperl-dev perl ftp libreadline-dev screen
+			reokey_module
+			;;
+	esac
+	exit 0
+}
+
+#一键更换系统
+reokey_os(){
+	title=" 一键更换系统 "
+	author="萌咖"
+	source="https://moeclub.org/2018/04/03/603/?v=244"
+	release=未选
+	framework=未选
+	version=未选
+	clear
+	menu_ver
+	menu_author
+	echo
+	echo -e "${dco_g}目前参数:${dco_t}"
+	echo -e "${dco_g}系统 $release  构架 $framework  版本 $version${dco_t}"
+	echo
+	echo -e "${dco_y}请选择系统发行版本 [1]Centos [2]Debian [3]Ubuntu [4]Windows:${dco_t}"
+	read -n1 -p "" answer
+	case $answer in
+		+)
+			dx_menu
+			;;
+		-)
+			exit
+			;;
+		1)
+			release=-c
+			reokey_os_centos
+			;;
+		2)
+			release=-d
+			reokey_os_debian
+			;;
+		3)
+			release=-u
+			reokey_os_ubuntu
+			;;
+		4)
+			release=-w
+			reokey_os_windows
+			;;
+		*)
+			reokey_os
+			;;
+	esac
+}
+#一键更换系统-选择构架
+reokey_os_centos(){
+	clear
+	menu_ver
+	menu_author
+	echo
+	echo -e "${dco_g}目前参数:${dco_t}"
+	echo -e "${dco_g}系统 $release  构架 $framework  版本 $version${dco_t}"
+	echo
+	echo -e "${dco_y}继续选择系统构架 [1]64位 [2]32位${dco_t}"
+	read -n1 -p "" answer
+	case $answer in
+		+)
+			dx_menu
+			;;
+		-)
+			exit
+			;;
+		1)
+			framework=64
+			reokey_os_centos_64
+			;;
+		2)
+			framework=32
+			reokey_os_centos_32
+			;;
+		*)
+			reokey_os_centos
+			;;
+	esac
+}
+reokey_os_debian(){
+	clear
+	menu_ver
+	menu_author
+	echo
+	echo -e "${dco_g}目前参数:${dco_t}"
+	echo -e "${dco_g}系统 $release  构架 $framework  版本 $version${dco_t}"
+	echo
+	echo -e "${dco_y}继续选择系统构架 [1]64位 [2]32位${dco_t}"
+	read -n1 -p "" answer
+	case $answer in
+		+)
+			dx_menu
+			;;
+		-)
+			exit
+			;;
+		1)
+			framework=64
+			reokey_os_debian_64
+			;;
+		2)
+			framework=32
+			reokey_os_debian_32
+			;;
+		*)
+			reokey_os_debian
+			;;
+	esac
+}
+reokey_os_ubuntu(){
+	clear
+	menu_ver
+	menu_author
+	echo
+	echo -e "${dco_g}目前参数:${dco_t}"
+	echo -e "${dco_g}系统 $release  构架 $framework  版本 $version${dco_t}"
+	echo
+	echo -e "${dco_y}继续选择系统构架 [1]64位 [2]32位${dco_t}"
+	read -n1 -p "" answer
+	case $answer in
+		+)
+			dx_menu
+			;;
+		-)
+			exit
+			;;
+		1)
+			framework=64
+			reokey_os_ubuntu_64
+			;;
+		2)
+			framework=32
+			reokey_os_ubuntu_32
+			;;
+		*)
+			reokey_os_ubuntu
+			;;
+	esac
+}
+reokey_os_windows(){
+	clear
+	menu_ver
+	menu_author
+	echo
+	echo -e "${dco_g}目前参数:${dco_t}"
+	echo -e "${dco_g}系统 $release  构架 $framework  版本 $version${dco_t}"
+	echo
+	echo -e "${dco_y}继续选择系统构架 [1]64位 [2]32位${dco_t}"
+	read -n1 -p "" answer
+	case $answer in
+		+)
+			dx_menu
+			;;
+		-)
+			exit
+			;;
+		1)
+			framework=64
+			reokey_os_windows_64
+			;;
+		2)
+			framework=32
+			reokey_os_windows_32
+			;;
+		*)
+			reokey_os_windows
+			;;
+	esac
+}
+#一键更换系统-选择版本
+reokey_os_centos_64(){
+	clear
+	menu_ver
+	menu_author
+	echo
+	echo -e "${dco_g}目前参数:${dco_t}"
+	echo -e "${dco_g}系统 $release  构架 $framework  版本 $version${dco_t}"
+	echo
+	echo -e "${dco_y}最后敲定系统版本 [1]Centos6.8 [2]Centos5.8${dco_t}"
+		read -n1 -p "" answer
+		case $answer in
+			+)
+				dx_menu
+				;;
+			-)
+				exit
+				;;
+			1)
+				version=6.8
+				reokey_os_install
+				;;
+			2)
+				version=5.8
+				reokey_os_install
+				;;
+			*)
+				reokey_os_centos_64
+				;;
+		esac
+}
+reokey_os_centos_32(){
+	clear
+	menu_ver
+	menu_author
+	echo
+	echo -e "${dco_g}目前参数:${dco_t}"
+	echo -e "${dco_g}系统 $release  构架 $framework  版本 $version${dco_t}"
+	echo
+	echo -e "${dco_y}最后敲定系统版本 [1]Centos6.8 [2]Centos5.8${dco_t}"
+		read -n1 -p "" answer
+		case $answer in
+			+)
+				dx_menu
+				;;
+			-)
+				exit
+				;;
+			1)
+				version=6.8
+				reokey_os_install
+				;;
+			2)
+				version=5.8
+				reokey_os_install
+				;;
+			*)
+				reokey_os_centos_32
+				;;
+		esac
+}
+reokey_os_debian_64(){
+	clear
+	menu_ver
+	menu_author
+	echo
+	echo -e "${dco_g}目前参数:${dco_t}"
+	echo -e "${dco_g}系统 $release  构架 $framework  版本 $version${dco_t}"
+	echo
+	echo -e "${dco_y}最后敲定系统版本 [1]Debian7 [2]Debian8 [3]Debian9${dco_t}"
+		read -n1 -p "" answer
+		case $answer in
+			+)
+				dx_menu
+				;;
+			-)
+				exit
+				;;
+			1)
+				version=7
+				reokey_os_install
+				;;
+			2)
+				version=8
+				reokey_os_install
+				;;
+			3)
+				version=9
+				reokey_os_install
+				;;
+			*)
+				reokey_os_debian_64
+				;;
+		esac
+}
+reokey_os_debian_32(){
+	clear
+	menu_ver
+	menu_author
+	echo
+	echo -e "${dco_g}目前参数:${dco_t}"
+	echo -e "${dco_g}系统 $release  构架 $framework  版本 $version${dco_t}"
+	echo
+	echo -e "${dco_y}最后敲定系统版本 [1]Debian7 [2]Debian8 [3]Debian9${dco_t}"
+		read -n1 -p "" answer
+		case $answer in
+			+)
+				dx_menu
+				;;
+			-)
+				exit
+				;;
+			1)
+				version=7
+				reokey_os_install
+				;;
+			2)
+				version=8
+				reokey_os_install
+				;;
+			3)
+				version=9
+				reokey_os_install
+				;;
+			*)
+				reokey_os_debian_32
+				;;
+		esac
+}
+reokey_os_ubuntu_64(){
+	clear
+	menu_ver
+	menu_author
+	echo
+	echo -e "${dco_g}目前参数:${dco_t}"
+	echo -e "${dco_g}系统 $release  构架 $framework  版本 $version${dco_t}"
+	echo
+	echo -e "${dco_y}最后敲定系统版本 [1]Ubuntu 18.04 [2]Ubuntu 16.04 [3]Ubuntu 14.04${dco_t}"
+		read -n1 -p "" answer
+		case $answer in
+			+)
+				dx_menu
+				;;
+			-)
+				exit
+				;;
+			1)
+				version=18.04
+				reokey_os_install
+				;;
+			2)
+				version=16.04
+				reokey_os_install
+				;;
+			3)
+				version=14.04
+				reokey_os_install
+				;;
+			*)
+				reokey_os_ubuntu_64
+				;;
+		esac
+}
+reokey_os_ubuntu_32(){
+	clear
+	menu_ver
+	menu_author
+	echo
+	echo -e "${dco_g}目前参数:${dco_t}"
+	echo -e "${dco_g}系统 $release  构架 $framework  版本 $version${dco_t}"
+	echo
+	echo -e "${dco_y}最后敲定系统版本 [1]Ubuntu 18.04 [2]Ubuntu 16.04 [3]Ubuntu 14.04${dco_t}"
+		read -n1 -p "" answer
+		case $answer in
+			+)
+				dx_menu
+				;;
+			-)
+				exit
+				;;
+			1)
+				version=18.04
+				reokey_os_install
+				;;
+			2)
+				version=16.04
+				reokey_os_install
+				;;
+			3)
+				version=14.04
+				reokey_os_install
+				;;
+			*)
+				reokey_os_ubuntu_32
+				;;
+		esac
+}
+reokey_os_windows_64(){
+	clear
+	menu_ver
+	menu_author
+	echo
+	echo -e "${dco_g}目前参数:${dco_t}"
+	echo -e "${dco_g}系统 $release  构架 $framework  版本 $version${dco_t}"
+	echo
+	echo -e "${dco_y}最后敲定系统版本 [1]Windows Server 2012 [2]Windows Server 2016${dco_t}"
+		read -n1 -p "" answer
+		case $answer in
+			+)
+				dx_menu
+				;;
+			-)
+				exit
+				;;
+			1)
+				version=2012
+				reokey_os_install
+				;;
+			2)
+				version=2016
+				reokey_os_install
+				;;
+			*)
+				reokey_os_windows_64
+				;;
+		esac
+}
+reokey_os_windows_32(){
+	clear
+	menu_ver
+	menu_author
+	echo
+	echo -e "${dco_g}目前参数:${dco_t}"
+	echo -e "${dco_g}系统 $release  构架 $framework  版本 $version${dco_t}"
+	echo
+	echo -e "${dco_y}最后敲定系统版本 [1]Windows Server 2012 [2]Windows Server 2016${dco_t}"
+		read -n1 -p "" answer
+		case $answer in
+			+)
+				dx_menu
+				;;
+			-)
+				exit
+				;;
+			1)
+				version=2003
+				reokey_os_install
+				;;
+			2)
+				version=2008
+				reokey_os_install
+				;;
+			*)
+				reokey_os_windows_32
+				;;
+		esac
+}
+#一键更换系统-开始安装
+reokey_os_install(){
+	clear
+	menu_ver
+	menu_author
+	echo
+	echo -e "${dco_g}目前参数:${dco_t}"
+	echo -e "${dco_g}系统 $release  构架 $framework  版本 $version${dco_t}"
+	echo -e "${dco_y}已经确定全部参数,按[任意键]开始安装,密码[Vicer]${dco_t}"
+	read -n1 -p "" answer
+	case $answer in
+		+)
+			dx_menu
+			;;
+		-)
+			exit
+			;;
+		*)
+			curl -# -o dxhz7 https://raw.githubusercontent.com/reokey/shell/master/data/dxhz7
+			sh dxhz7
+			bash dxhz7 $release $version -v $framework -a
+			;;
+	esac
+}
+
+#一键升级内核
+reokey_kernel(){
+	clear
+	menu_ver
+	echo -e "${dco_y}升级内核组件[ ${d_ver} ]!${dco_t}"
+	echo -e "${dco_y}———————————————————————————${dco_t}"
+	echo -e "${dco_y} 7.  一键安装最新内核开启BBR${dco_t}"
+	echo -e "${dco_y} 8.  卸载旧kernel及相关${dco_t}"
+	echo -e "${dco_y} 9.  查看当前kernel信息${dco_t}"
+	echo -e "${dco_y}———————————————————————————${dco_t}"
+	echo
+	echo
+	echo
+	echo -e "${dco_g} 请输入 [7-9]:${dco_t}"
+	read -n1 -p "" answer
+	case $answer in
+		+)
+			dx_menu
+			;;
+		-)
+			exit
+			;;
+		7)
+			curl -# -o dxhz8 https://raw.githubusercontent.com/reokey/shell/master/data/dxhz8
+			sh dxhz8
+			;;
+		8)
+			yum remove *kernel* -y
+			yum --enablerepo=elrepo-kernel install kernel-ml-headers kernel-ml-tools kernel-ml-tools-libs -y
+			yum install dracut-kernel -y
+			reokey_kernel
+			;;
+		9)
+			echo -ne "\r     \r"
+			clear
+			menu_ver
+			echo -e "${dco_y}当前kernel信息${dco_t}"
+			echo
+			rpm -qa |grep kernel
+			echo
+			echo -e "${dco_g} [任意键]返回:${dco_t}"
+				read -n1 -p "" answer
+				case $answer in
+					*)
+					reokey_kernel
+					;;
+				esac
+			;;
+		*)
+		error_command
+		;;
+	esac
+}
+
+
+			#############  菜单开始  #############
+#菜单头部
+menu_banner(){
+	clear
+	#	check_Python
+	#	clear_command
+	echo -e "${dco_g}───────────────────────────── Linux Server Script ─────────────────────────────${dco_t}"
+	echo -e "${dco_g}   ______                 _                   ${dco_t}"
+	echo -e "${dco_g}  (_____ \               | |                  ${dco_t}"
+	echo -e "${dco_g}   _____) ) _____   ___  | |  _  _____  _   _ ${dco_t}"
+	echo -e "${dco_g}  |  __  / | ___ | / _ \ | |_/ )| ___ || | | |${dco_t}"
+	echo -e "${dco_g}  | |  \ \ | ____|| |_| ||  _ ( | ____|| |_| |${dco_t}"
+	echo -e "${dco_g}  |_|   |_||_____) \___/ |_| \_)|_____) \__  |${dco_t}"
+	echo -e "${dco_g}                                       (____/ ${dco_t}"
+}
+
+menu_ver(){
+	menu_help_tips
+	menu_banner
+	echo && echo -e "  ${dco_g}达奚一键安装管理脚本\t\t\t\t[更新日期 ${dx_ver}]${dco_t}"
+}
+
+menu_help(){
+	echo && echo -e "  ${dco_g}达奚一键安装管理脚本\t\t\t\t[Ver ${dx_ver}]${dco_t}"
+	echo
+	echo -ne "${dco_y}说明:\t [作用]...\t命令示例\t\t[说明]....${dco_t}\n\n\t ${dco_g}[帮助]\t\tre help\t\t\t[项目]\n\t [清单]${dco_t}\t\t${dco_g}re list\t\t\t[无]\n\t [管理]\t\tre manage\t\t[授权]\n\t [脚本]\t\tre ok\t\t\t[项目]\n\t [扫描]\t\tre scan\t\t\t[项目]\n\t [版本]\t\tre ver\t\t\t[项目]${dco_t}\n\n"
+	Check_re re;
+}
+
+menu_gui(){
+	clear
+	if [[ -z "$dos_r" ]]; then
+		check_dos_r
+	fi
+	if [[ -z "$dos_v" ]]; then
+		check_dos_r
+	fi
+	if [[ -z "$dos_b" ]]; then
+		check_dos_r
+	fi
+	if [[ -z "$dos_k" ]]; then
+		check_dos_r
+	fi
+	menu_command
+}
+
+menu_gui(){
+	echo && echo -e "  ${dco_g}达奚一键安装管理脚本\t\t[Ver ${dx_ver}]${dco_t}"
+	echo
+	echo -ne "${dco_y}说明:\t [作用]...\t命令示例\t\t[参数]...."
+}
+
+
+			#############  脚本开始  #############
+while :; do
+	[ -z "$1" ] && menu_help && exit 0
+	case "$1" in
+	check)
+		menu_banner;
+		CheckDependence wget,awk,grep,sed,cut,cat,cpio,gzip,find,dirname,basename,file,xz,git;
+		exit 0
 	;;
-	1)
-	Install_aria2
+	help)
+		menu_banner
+		menu_help;
+		exit 0
 	;;
-	2)
-	Update_aria2
+	list)
+		menu_banner
+		IPLIST=$2; shift 2
 	;;
-	3)
-	Uninstall_aria2
+	manage)
+		menu_banner
+		manage;
+		exit 0
 	;;
-	4)
-	Start_aria2
+	ok)
+		menu_banner
+		ok;
+		exit 0
 	;;
-	5)
-	Stop_aria2
+	scan)
+		menu_banner
+		check_fun
+		check_tree
+		check_key
+		check_dos_r;
+		exit 0
 	;;
-	6)
-	Restart_aria2
+	ver)
+		menu_banner
+		menu_ver
+		exit 0
 	;;
-	7)
-	Set_aria2
+	-ssh_port)
+		ssh_port=$2; shift 2
+		[ ${ssh_port} -eq 22 >/dev/null 2>&1 -o ${ssh_port} -gt 1024 >/dev/null 2>&1 -a ${ssh_port} -lt 65535 >/dev/null 2>&1 ] || { echo "${CWARNING}ssh_port input error! Input range: 22,1025~65534${CEND}"; exit 1; }
 	;;
-	8)
-	View_Aria2
-	;;
-	9)
-	View_Log
-	;;
-	10)
-	Update_bt_tracker
+	--)
+		shift
 	;;
 	*)
-	echo "请输入正确数字 [0-10]"
+		menu_help;
+		echo -e "${dco_sb}\t${dco_y}未知命令 [${1}]${dco_t}"
+		exit 1
 	;;
-esac
-fi
+	esac
+done
