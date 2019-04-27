@@ -1177,8 +1177,9 @@ END
 	invoke-rc.d nginx restart
 	;;
 *)
-	echo 'Usage:' `basename $0` '[option]'
-	echo 'Available option:'
+	echo '使用说明:'
+	echo '用法:' `basename $0` '[参数]'
+	echo '参数列表:'
 	for option in system exim4 mysql nginx php wordpress wordpress_en rainloop ssh addnginx stable testing dhost vhost httpproxy eaccelerator  apache addapache sshport phpmyadmin
 	do
 		echo '  -' $option
