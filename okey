@@ -14,7 +14,9 @@ check_shell(){
 sh_new_ver=$(wget --no-check-certificate -qO- "https://raw.githubusercontent.com/4055020/shell/master/okey"|grep 'sh_ver="'|awk -F "=" '{print $NF}'|sed 's/\"//g'|head -1)
 [[ -z ${sh_new_ver} ]] && echo -e "${Error} 无法链接到 Github !" && exit 0
 	if [[ ${sh_new_ver} != ${sh_ver} ]]; then
-		wget --no-check-certificate -qO /usr/local/sbin/okey 'https://raw.githubusercontent.com/4055020/shell/master/okey' && chmod -x /usr/local/sbin/okey
+		wget --no-check-certificate -qO /root/okey 'https://raw.githubusercontent.com/4055020/shell/master/okey'
+		cp -f /root/okey /usr/local/sbin/okey
+		chmod -x /usr/local/sbin/okey
 	else
 		echo "已链接到 Github"
 	fi
