@@ -22,8 +22,8 @@ printf "
 
 oneinstack_dir=$(dirname "`readlink -f $0`")
 pushd ${oneinstack_dir} > /dev/null
-. ./options.conf
-. ./include/color.sh
+options.conf
+include/color.sh
 
 [ ! -d "${pureftpd_install_dir}" ] && { echo "${CFAILURE}FTP server does not exist! ${CEND}"; exit 1; }
 
