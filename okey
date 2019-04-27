@@ -1,5 +1,5 @@
 #!/bin/bash
-sh_ver="19.4.28"
+sh_ver="19.5.1"
 check_root
 function httpRequest(){
     info=`curl -s -m 10 --connect-timeout 10 -I https://raw.githubusercontent.com/4055020/shell/master/Other/$1.sh`
