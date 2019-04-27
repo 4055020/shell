@@ -1,15 +1,13 @@
 #!/bin/bash
-sh_ver="18.9.9"
+sh_ver="19.4.28"
 
 function httpRequest(){
     info=`curl -s -m 10 --connect-timeout 10 -I https://raw.githubusercontent.com/4055020/shell/master/Other/$1.sh`
     code=`echo $info|grep "HTTP"|awk '{print $2}'`
     if [ "$code" == "200" ];then
         bash -c "$(curl -sS https://raw.githubusercontent.com/4055020/shell/master/Other/$1.sh)"
-	echo "请求失败1，网络失败或尚未支持的命令"
     else
-    	bash -c "$(curl -sS https://raw.githubusercontent.com/4055020/shell/master/Other/$1.sh)"
-        echo "请求失败2，网络失败或尚未支持的命令"
+        echo "不支持的命令"
     fi
 }
 check_shell(){
