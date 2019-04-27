@@ -17,9 +17,8 @@ sh_new_ver=$(wget --no-check-certificate -qO- "https://raw.githubusercontent.com
 [[ -z ${sh_new_ver} ]] && echo -e "${Error} 无法链接到 Github !" && exit 0
 	if [[ ${sh_new_ver} != ${sh_ver} ]]; then
 		wget --no-check-certificate -qO okey 'https://raw.githubusercontent.com/4055020/shell/master/okey' && chmod -x okey
-		httpRequest "$1"
 	else
-		httpRequest "$1"
+		echo "已链接到 Github"
 	fi
 }
 check_root()
@@ -28,3 +27,4 @@ check_root()
 }
 check_root
 check_shell
+httpRequest "$1"
