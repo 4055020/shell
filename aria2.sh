@@ -1,646 +1,1187 @@
-#!/usr/bin/env bash
-PATH=/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin:/usr/local/sbin:~/bin
-export PATH
+#!/bin/bash
+#First usable tyleamp.sh on Debian 7, test on securedragon 512M OpenVZ VPS and my own Mini-ITX PC with Debian 163.com Mirror.
 
-#=================================================
-#	System Required: CentOS/Debian/Ubuntu
-#	Description: Aria2
-#	Version: 1.1.10
-#	Author: Toyo
-#	Blog: https://doub.io/shell-jc4/
-#=================================================
-sh_ver="1.1.10"
-filepath=$(cd "$(dirname "$0")"; pwd)
-file_1=$(echo -e "${filepath}"|awk -F "$0" '{print $1}')
-file="/root/.aria2"
-aria2_conf="/root/.aria2/aria2.conf"
-aria2_log="/root/.aria2/aria2.log"
-Folder="/usr/local/aria2"
-aria2c="/usr/bin/aria2c"
-Crontab_file="/usr/bin/crontab"
+function check_install {
+	if [ -z "`which "$1" 2>/dev/null`" ]
+	then
+				executable=$1
+		shift
+		while [ -n "$1" ]
+		do
+		    DEBIAN_FRONTEND=noninteractive apt-get -q -y --force-yes install "$1"
+		    print_info "$1 installed for $executable"
+		    shift
+		done
+	else
+		print_warn "$2 already installed"
+	fi
+}
 
-Green_font_prefix="\033[32m" && Red_font_prefix="\033[31m" && Green_background_prefix="\033[42;37m" && Red_background_prefix="\033[41;37m" && Font_color_suffix="\033[0m"
-Info="${Green_font_prefix}[信息]${Font_color_suffix}"
-Error="${Red_font_prefix}[错误]${Font_color_suffix}"
-Tip="${Green_font_prefix}[注意]${Font_color_suffix}"
+function check_remove {
+	if [ -n "`which "$1" 2>/dev/null`" ]
+	then
+		DEBIAN_FRONTEND=noninteractive apt-get -q -y remove --purge "$2"
+		print_info "$2 removed"
+	else
+		print_warn "$2 is not installed"
+	fi
+}
 
-check_root(){
-	[[ $EUID != 0 ]] && echo -e "${Error} 当前非ROOT账号(或没有ROOT权限)，无法继续操作，请更换ROOT账号或使用 ${Green_background_prefix}sudo su${Font_color_suffix} 命令获取临时ROOT权限（执行后可能会提示输入当前账号的密码）。" && exit 1
-}
-#检查系统
-check_sys(){
-	if [[ -f /etc/redhat-release ]]; then
-		release="centos"
-	elif cat /etc/issue | grep -q -E -i "debian"; then
-		release="debian"
-	elif cat /etc/issue | grep -q -E -i "ubuntu"; then
-		release="ubuntu"
-	elif cat /etc/issue | grep -q -E -i "centos|red hat|redhat"; then
-		release="centos"
-	elif cat /proc/version | grep -q -E -i "debian"; then
-		release="debian"
-	elif cat /proc/version | grep -q -E -i "ubuntu"; then
-		release="ubuntu"
-	elif cat /proc/version | grep -q -E -i "centos|red hat|redhat"; then
-		release="centos"
-    fi
-	bit=`uname -m`
-}
-check_installed_status(){
-	[[ ! -e ${aria2c} ]] && echo -e "${Error} Aria2 没有安装，请检查 !" && exit 1
-	[[ ! -e ${aria2_conf} ]] && echo -e "${Error} Aria2 配置文件不存在，请检查 !" && [[ $1 != "un" ]] && exit 1
-}
-check_crontab_installed_status(){
-	if [[ ! -e ${Crontab_file} ]]; then
-		echo -e "${Error} Crontab 没有安装，开始安装..."
-		if [[ ${release} == "centos" ]]; then
-			yum install crond -y
-		else
-			apt-get install cron -y
-		fi
-		if [[ ! -e ${Crontab_file} ]]; then
-			echo -e "${Error} Crontab 安装失败，请检查！" && exit 1
-		else
-			echo -e "${Info} Crontab 安装成功！"
-		fi
+function check_sanity {
+	# Do some sanity checking.
+	if [ $(/usr/bin/id -u) != "0" ]
+	then
+		die 'Must be run by root user'
+	fi
+
+	if [ ! -f /etc/debian_version ]
+	then
+		die "Distribution is not supported"
 	fi
 }
-check_pid(){
-	PID=`ps -ef| grep "aria2c"| grep -v grep| grep -v "aria2.sh"| grep -v "init.d"| grep -v "service"| awk '{print $2}'`
+
+function die {
+	echo "ERROR: $1" > /dev/null 1>&2
+	exit 1
 }
-check_new_ver(){
-	echo -e "${Info} 请输入 Aria2 版本号，格式如：[ 1.34.0 ]，获取地址：[ https://github.com/q3aql/aria2-static-builds/releases ]"
-	read -e -p "默认回车自动获取最新版本号:" aria2_new_ver
-	if [[ -z ${aria2_new_ver} ]]; then
-		aria2_new_ver=$(wget --no-check-certificate -qO- https://api.github.com/repos/q3aql/aria2-static-builds/releases | grep -o '"tag_name": ".*"' |head -n 1| sed 's/"//g;s/v//g' | sed 's/tag_name: //g')
-		if [[ -z ${aria2_new_ver} ]]; then
-			echo -e "${Error} Aria2 最新版本获取失败，请手动获取最新版本号[ https://github.com/q3aql/aria2-static-builds/releases ]"
-			read -e -p "请输入版本号 [ 格式如 1.34.0 ] :" aria2_new_ver
-			[[ -z "${aria2_new_ver}" ]] && echo "取消..." && exit 1
-		else
-			echo -e "${Info} 检测到 Aria2 最新版本为 [ ${aria2_new_ver} ]"
-		fi
-	else
-		echo -e "${Info} 即将准备下载 Aria2 版本为 [ ${aria2_new_ver} ]"
+
+function get_domain_name() {
+	# Getting rid of the lowest part.
+	domain=${1%.*}
+	lowest=`expr "$domain" : '.*\.\([a-z][a-z]*\)'`
+	case "$lowest" in
+	com|net|org|gov|edu|co)
+		domain=${domain%.*}
+		;;
+	esac
+	lowest=`expr "$domain" : '.*\.\([a-z][a-z]*\)'`
+	[ -z "$lowest" ] && echo "$domain" || echo "$lowest"
+}
+
+function get_password() {
+	# Check whether our local salt is present.
+	SALT=/var/lib/radom_salt
+	if [ ! -f "$SALT" ]
+	then
+		head -c 512 /dev/urandom > "$SALT"
+		chmod 400 "$SALT"
+	fi
+	password=`(cat "$SALT"; echo $1) | md5sum | base64`
+	echo ${password:0:13}
+}
+
+function install_dash {
+	check_install dash dash
+	rm -f /bin/sh
+	ln -s dash /bin/sh
+}
+
+function install_dropbear {
+	check_install dropbear dropbear
+	check_install /usr/sbin/xinetd xinetd
+
+	# Disable SSH
+	touch /etc/ssh/sshd_not_to_be_run
+	invoke-rc.d ssh stop
+
+	# Enable dropbear to start. We are going to use xinetd as it is just
+	# easier to configure and might be used for other things.
+	cat > /etc/xinetd.d/dropbear <<END
+service dropbear
+{
+socket_type = stream
+only_from = 0.0.0.0
+wait = no
+user = root
+protocol = tcp
+server = /usr/sbin/dropbear
+server_args = -i
+disable = no
+port = 22
+type = unlisted
+}
+END
+
+	invoke-rc.d xinetd restart
+}
+
+function install_exim4 {
+	check_install mail exim4
+	if [ -f /etc/exim4/update-exim4.conf.conf ]
+	then
+		sed -i \
+		    "s/dc_eximconfig_configtype='local'/dc_eximconfig_configtype='internet'/" \
+		    /etc/exim4/update-exim4.conf.conf
+		invoke-rc.d exim4 restart
 	fi
 }
-check_ver_comparison(){
-	aria2_now_ver=$(${aria2c} -v|head -n 1|awk '{print $3}')
-	[[ -z ${aria2_now_ver} ]] && echo -e "${Error} Brook 当前版本获取失败 !" && exit 1
-	if [[ "${aria2_now_ver}" != "${aria2_new_ver}" ]]; then
-		echo -e "${Info} 发现 Aria2 已有新版本 [ ${aria2_new_ver} ](当前版本：${aria2_now_ver})"
-		read -e -p "是否更新(会中断当前下载任务，请注意) ? [Y/n] :" yn
-		[[ -z "${yn}" ]] && yn="y"
-		if [[ $yn == [Yy] ]]; then
-			check_pid
-			[[ ! -z $PID ]] && kill -9 ${PID}
-			Download_aria2 "update"
-			Start_aria2
-		fi
-	else
-		echo -e "${Info} 当前 Aria2 已是最新版本 [ ${aria2_new_ver} ]" && exit 1
-	fi
+
+function install_mysql {
+	# Install the MySQL packages
+	check_install mysqld mysql-server
+	check_install mysql mysql-client
+
+	# all the related files.
+	invoke-rc.d mysql stop
+	cat > /etc/mysql/conf.d/actgod.cnf <<END
+[mysqld]
+key_buffer_size = 8M
+query_cache_size = 0
+END
+	invoke-rc.d mysql start
+
+	# Generating a new password for the root user.
+	passwd=`get_password root@mysql`
+	mysqladmin password "$passwd"
+	cat > ~/.my.cnf <<END
+[client]
+user = root
+password = $passwd
+END
+	chmod 600 ~/.my.cnf
 }
-Download_aria2(){
-	update_dl=$1
-	cd "/usr/local"
-	#echo -e "${bit}"
-	if [[ ${bit} == "x86_64" ]]; then
-		bit="64bit"
-	elif [[ ${bit} == "i386" || ${bit} == "i686" ]]; then
-		bit="32bit"
-	else
-		bit="arm-rbpi"
-	fi
-	wget -N --no-check-certificate "https://github.com/q3aql/aria2-static-builds/releases/download/v${aria2_new_ver}/aria2-${aria2_new_ver}-linux-gnu-${bit}-build1.tar.bz2"
-	Aria2_Name="aria2-${aria2_new_ver}-linux-gnu-${bit}-build1"
+
+function install_nginx {
+	check_install nginx nginx
 	
-	[[ ! -s "${Aria2_Name}.tar.bz2" ]] && echo -e "${Error} Aria2 压缩包下载失败 !" && exit 1
-	tar jxvf "${Aria2_Name}.tar.bz2"
-	[[ ! -e "/usr/local/${Aria2_Name}" ]] && echo -e "${Error} Aria2 解压失败 !" && rm -rf "${Aria2_Name}.tar.bz2" && exit 1
-	[[ ${update_dl} = "update" ]] && rm -rf "${Folder}"
-	mv "/usr/local/${Aria2_Name}" "${Folder}"
-	[[ ! -e "${Folder}" ]] && echo -e "${Error} Aria2 文件夹重命名失败 !" && rm -rf "${Aria2_Name}.tar.bz2" && rm -rf "/usr/local/${Aria2_Name}" && exit 1
-	rm -rf "${Aria2_Name}.tar.bz2"
-	cd "${Folder}"
-	make install
-	[[ ! -e ${aria2c} ]] && echo -e "${Error} Aria2 主程序安装失败！" && rm -rf "${Folder}" && exit 1
-	chmod +x aria2c
-	echo -e "${Info} Aria2 主程序安装完毕！开始下载配置文件..."
-}
-Download_aria2_conf(){
-	mkdir "${file}" && cd "${file}"
-	wget --no-check-certificate -N "https://raw.githubusercontent.com/ToyoDAdoubiBackup/doubi/master/other/Aria2/aria2.conf"
-	[[ ! -s "aria2.conf" ]] && echo -e "${Error} Aria2 配置文件下载失败 !" && rm -rf "${file}" && exit 1
-	wget --no-check-certificate -N "https://raw.githubusercontent.com/ToyoDAdoubiBackup/doubi/master/other/Aria2/dht.dat"
-	[[ ! -s "dht.dat" ]] && echo -e "${Error} Aria2 DHT文件下载失败 !" && rm -rf "${file}" && exit 1
-	echo '' > aria2.session
-	sed -i 's/^rpc-secret=DOUBIToyo/rpc-secret='$(date +%s%N | md5sum | head -c 20)'/g' ${aria2_conf}
-}
-Service_aria2(){
-	if [[ ${release} = "centos" ]]; then
-		if ! wget --no-check-certificate https://raw.githubusercontent.com/ToyoDAdoubiBackup/doubi/master/service/aria2_centos -O /etc/init.d/aria2; then
-			echo -e "${Error} Aria2服务 管理脚本下载失败 !" && exit 1
-		fi
-		chmod +x /etc/init.d/aria2
-		chkconfig --add aria2
-		chkconfig aria2 on
-	else
-		if ! wget --no-check-certificate https://raw.githubusercontent.com/ToyoDAdoubiBackup/doubi/master/service/aria2_debian -O /etc/init.d/aria2; then
-			echo -e "${Error} Aria2服务 管理脚本下载失败 !" && exit 1
-		fi
-		chmod +x /etc/init.d/aria2
-		update-rc.d -f aria2 defaults
+	# Need to increase the bucket size for Debian 5.
+	if [ ! -d /etc/nginx ];
+		then
+		mkdir /etc/nginx
 	fi
-	echo -e "${Info} Aria2服务 管理脚本下载完成 !"
+	if [ ! -d /etc/nginx/conf.d ];
+		then
+		mkdir /etc/nginx/conf.d
+	fi
+
+	sed -i s/'^worker_processes [0-9];'/'worker_processes 1;'/g /etc/nginx/nginx.conf
+	# Enable gzip for most of static sources
+	sed -i s/'# gzip_'/'gzip_'/g /etc/nginx/nginx.conf
+	invoke-rc.d nginx restart
+	if [ ! -d /var/www ];
+		then
+		mkdir /var/www
+	fi
+	cat > /etc/nginx/proxy.conf <<EXND
+proxy_connect_timeout 30s;
+proxy_send_timeout   90;
+proxy_read_timeout   90;
+proxy_buffer_size    32k;
+proxy_buffers     4 32k;
+proxy_busy_buffers_size 64k;
+proxy_redirect     off;
+proxy_hide_header  Vary;
+proxy_set_header   Accept-Encoding '';
+proxy_set_header   Host   \$host;
+proxy_set_header   Referer \$http_referer;
+proxy_set_header   Cookie \$http_cookie;
+proxy_set_header   X-Real-IP  \$remote_addr;
+proxy_set_header   X-Forwarded-For \$proxy_add_x_forwarded_for;
+EXND
 }
-Installation_dependency(){
-	if [[ ${release} = "centos" ]]; then
-		yum update
-		yum -y groupinstall "Development Tools"
-		yum install nano -y
-	else
-		apt-get update
-		apt-get install nano build-essential -y
-	fi
-}
-Install_aria2(){
-	check_root
-	[[ -e ${aria2c} ]] && echo -e "${Error} Aria2 已安装，请检查 !" && exit 1
-	check_sys
-	echo -e "${Info} 开始安装/配置 依赖..."
-	Installation_dependency
-	echo -e "${Info} 开始下载/安装 主程序..."
-	check_new_ver
-	Download_aria2
-	echo -e "${Info} 开始下载/安装 配置文件..."
-	Download_aria2_conf
-	echo -e "${Info} 开始下载/安装 服务脚本(init)..."
-	Service_aria2
-	Read_config
-	aria2_RPC_port=${aria2_port}
-	echo -e "${Info} 开始设置 iptables防火墙..."
-	Set_iptables
-	echo -e "${Info} 开始添加 iptables防火墙规则..."
-	Add_iptables
-	echo -e "${Info} 开始保存 iptables防火墙规则..."
-	Save_iptables
-	echo -e "${Info} 所有步骤 安装完毕，开始启动..."
-	Start_aria2
-}
-Start_aria2(){
-	check_installed_status
-	check_pid
-	[[ ! -z ${PID} ]] && echo -e "${Error} Aria2 正在运行，请检查 !" && exit 1
-	/etc/init.d/aria2 start
-}
-Stop_aria2(){
-	check_installed_status
-	check_pid
-	[[ -z ${PID} ]] && echo -e "${Error} Aria2 没有运行，请检查 !" && exit 1
-	/etc/init.d/aria2 stop
-}
-Restart_aria2(){
-	check_installed_status
-	check_pid
-	[[ ! -z ${PID} ]] && /etc/init.d/aria2 stop
-	/etc/init.d/aria2 start
-}
-Set_aria2(){
-	check_installed_status
-	echo && echo -e "你要做什么？
- ${Green_font_prefix}1.${Font_color_suffix}  修改 Aria2 RPC密码
- ${Green_font_prefix}2.${Font_color_suffix}  修改 Aria2 RPC端口
- ${Green_font_prefix}3.${Font_color_suffix}  修改 Aria2 文件下载位置
- ${Green_font_prefix}4.${Font_color_suffix}  修改 Aria2 密码+端口+文件下载位置
- ${Green_font_prefix}5.${Font_color_suffix}  手动 打开配置文件修改" && echo
-	read -e -p "(默认: 取消):" aria2_modify
-	[[ -z "${aria2_modify}" ]] && echo "已取消..." && exit 1
-	if [[ ${aria2_modify} == "1" ]]; then
-		Set_aria2_RPC_passwd
-	elif [[ ${aria2_modify} == "2" ]]; then
-		Set_aria2_RPC_port
-	elif [[ ${aria2_modify} == "3" ]]; then
-		Set_aria2_RPC_dir
-	elif [[ ${aria2_modify} == "4" ]]; then
-		Set_aria2_RPC_passwd_port_dir
-	elif [[ ${aria2_modify} == "5" ]]; then
-		Set_aria2_vim_conf
-	else
-		echo -e "${Error} 请输入正确的数字(1-5)" && exit 1
-	fi
-}
-Set_aria2_RPC_passwd(){
-	read_123=$1
-	if [[ ${read_123} != "1" ]]; then
-		Read_config
-	fi
-	if [[ -z "${aria2_passwd}" ]]; then
-		aria2_passwd_1="空(没有检测到配置，可能手动删除或注释了)"
-	else
-		aria2_passwd_1=${aria2_passwd}
-	fi
-	echo -e "请输入要设置的 Aria2 RPC密码(旧密码为：${Green_font_prefix}${aria2_passwd_1}${Font_color_suffix})"
-	read -e -p "(默认密码: 随机生成 密码请不要包含等号 = 和井号 #):" aria2_RPC_passwd
-	echo
-	[[ -z "${aria2_RPC_passwd}" ]] && aria2_RPC_passwd=$(date +%s%N | md5sum | head -c 20)
-	if [[ "${aria2_passwd}" != "${aria2_RPC_passwd}" ]]; then
-		if [[ -z "${aria2_passwd}" ]]; then
-			echo -e "\nrpc-secret=${aria2_RPC_passwd}" >> ${aria2_conf}
-			if [[ $? -eq 0 ]];then
-				echo -e "${Info} 密码修改成功！新密码为：${Green_font_prefix}${aria2_RPC_passwd}${Font_color_suffix}(因为找不到旧配置参数，所以自动加入配置文件底部)"
-				if [[ ${read_123} != "1" ]]; then
-					Restart_aria2
-				fi
-			else 
-				echo -e "${Error} 密码修改失败！旧密码为：${Green_font_prefix}${aria2_passwd}${Font_color_suffix}"
-			fi
-		else
-			sed -i 's/^rpc-secret='${aria2_passwd}'/rpc-secret='${aria2_RPC_passwd}'/g' ${aria2_conf}
-			if [[ $? -eq 0 ]];then
-				echo -e "${Info} 密码修改成功！新密码为：${Green_font_prefix}${aria2_RPC_passwd}${Font_color_suffix}"
-				if [[ ${read_123} != "1" ]]; then
-					Restart_aria2
-				fi
-			else 
-				echo -e "${Error} 密码修改失败！旧密码为：${Green_font_prefix}${aria2_passwd}${Font_color_suffix}"
-			fi
-		fi
-	else
-		echo -e "${Error} 新密码与旧密码一致，取消..."
-	fi
-}
-Set_aria2_RPC_port(){
-	read_123=$1
-	if [[ ${read_123} != "1" ]]; then
-		Read_config
-	fi
-	if [[ -z "${aria2_port}" ]]; then
-		aria2_port_1="空(没有检测到配置，可能手动删除或注释了)"
-	else
-		aria2_port_1=${aria2_port}
-	fi
-	echo -e "请输入要设置的 Aria2 RPC端口(旧端口为：${Green_font_prefix}${aria2_port_1}${Font_color_suffix})"
-	read -e -p "(默认端口: 6800):" aria2_RPC_port
-	echo
-	[[ -z "${aria2_RPC_port}" ]] && aria2_RPC_port="6800"
-	if [[ "${aria2_port}" != "${aria2_RPC_port}" ]]; then
-		if [[ -z "${aria2_port}" ]]; then
-			echo -e "\nrpc-listen-port=${aria2_RPC_port}" >> ${aria2_conf}
-			if [[ $? -eq 0 ]];then
-				echo -e "${Info} 端口修改成功！新端口为：${Green_font_prefix}${aria2_RPC_port}${Font_color_suffix}(因为找不到旧配置参数，所以自动加入配置文件底部)"
-				Del_iptables
-				Add_iptables
-				Save_iptables
-				if [[ ${read_123} != "1" ]]; then
-					Restart_aria2
-				fi
-			else 
-				echo -e "${Error} 端口修改失败！旧端口为：${Green_font_prefix}${aria2_port}${Font_color_suffix}"
-			fi
-		else
-			sed -i 's/^rpc-listen-port='${aria2_port}'/rpc-listen-port='${aria2_RPC_port}'/g' ${aria2_conf}
-			if [[ $? -eq 0 ]];then
-				echo -e "${Info} 端口修改成功！新密码为：${Green_font_prefix}${aria2_RPC_port}${Font_color_suffix}"
-				Del_iptables
-				Add_iptables
-				Save_iptables
-				if [[ ${read_123} != "1" ]]; then
-					Restart_aria2
-				fi
-			else 
-				echo -e "${Error} 端口修改失败！旧密码为：${Green_font_prefix}${aria2_port}${Font_color_suffix}"
-			fi
-		fi
-	else
-		echo -e "${Error} 新端口与旧端口一致，取消..."
-	fi
-}
-Set_aria2_RPC_dir(){
-	read_123=$1
-	if [[ ${read_123} != "1" ]]; then
-		Read_config
-	fi
-	if [[ -z "${aria2_dir}" ]]; then
-		aria2_dir_1="空(没有检测到配置，可能手动删除或注释了)"
-	else
-		aria2_dir_1=${aria2_dir}
-	fi
-	echo -e "请输入要设置的 Aria2 文件下载位置(旧位置为：${Green_font_prefix}${aria2_dir_1}${Font_color_suffix})"
-	read -e -p "(默认位置: /usr/local/caddy/www/aria2/Download):" aria2_RPC_dir
-	[[ -z "${aria2_RPC_dir}" ]] && aria2_RPC_dir="/usr/local/caddy/www/aria2/Download"
-	echo
-	if [[ -d "${aria2_RPC_dir}" ]]; then
-		if [[ "${aria2_dir}" != "${aria2_RPC_dir}" ]]; then
-			if [[ -z "${aria2_dir}" ]]; then
-				echo -e "\ndir=${aria2_RPC_dir}" >> ${aria2_conf}
-				if [[ $? -eq 0 ]];then
-					echo -e "${Info} 位置修改成功！新位置为：${Green_font_prefix}${aria2_RPC_dir}${Font_color_suffix}(因为找不到旧配置参数，所以自动加入配置文件底部)"
-					if [[ ${read_123} != "1" ]]; then
-						Restart_aria2
-					fi
-				else 
-					echo -e "${Error} 位置修改失败！旧位置为：${Green_font_prefix}${aria2_dir}${Font_color_suffix}"
-				fi
-			else
-				aria2_dir_2=$(echo "${aria2_dir}"|sed 's/\//\\\//g')
-				aria2_RPC_dir_2=$(echo "${aria2_RPC_dir}"|sed 's/\//\\\//g')
-				sed -i 's/^dir='${aria2_dir_2}'/dir='${aria2_RPC_dir_2}'/g' ${aria2_conf}
-				if [[ $? -eq 0 ]];then
-					echo -e "${Info} 位置修改成功！新位置为：${Green_font_prefix}${aria2_RPC_dir}${Font_color_suffix}"
-					if [[ ${read_123} != "1" ]]; then
-						Restart_aria2
-					fi
-				else 
-					echo -e "${Error} 位置修改失败！旧位置为：${Green_font_prefix}${aria2_dir}${Font_color_suffix}"
-				fi
-			fi
-		else
-			echo -e "${Error} 新位置与旧位置一致，取消..."
-		fi
-	else
-		echo -e "${Error} 新位置文件夹不存在，请检查！新位置为：${Green_font_prefix}${aria2_RPC_dir}${Font_color_suffix}"
-	fi
-}
-Set_aria2_RPC_passwd_port_dir(){
-	Read_config
-	Set_aria2_RPC_passwd "1"
-	Set_aria2_RPC_port "1"
-	Set_aria2_RPC_dir "1"
-	Restart_aria2
-}
-Set_aria2_vim_conf(){
-	Read_config
-	aria2_port_old=${aria2_port}
-	echo -e "${Tip} 手动修改配置文件须知（nano 文本编辑器详细使用教程：https://doub.io/linux-jc13/）：
-${Green_font_prefix}1.${Font_color_suffix} 配置文件中含有中文注释，如果你的 服务器系统 或 SSH工具 不支持中文显示，将会乱码(请本地编辑)。
-${Green_font_prefix}2.${Font_color_suffix} 一会自动打开配置文件后，就可以开始手动编辑文件了。
-${Green_font_prefix}3.${Font_color_suffix} 如果要退出并保存文件，那么按 ${Green_font_prefix}Ctrl+X键${Font_color_suffix} 后，输入 ${Green_font_prefix}y${Font_color_suffix} 后，再按一下 ${Green_font_prefix}回车键${Font_color_suffix} 即可。
-${Green_font_prefix}4.${Font_color_suffix} 如果要退出并不保存文件，那么按 ${Green_font_prefix}Ctrl+X键${Font_color_suffix} 后，输入 ${Green_font_prefix}n${Font_color_suffix} 即可。
-${Green_font_prefix}5.${Font_color_suffix} 如果你想在本地编辑配置文件，那么配置文件位置： ${Green_font_prefix}/root/.aria2/aria2.conf${Font_color_suffix} (注意是隐藏目录) 。" && echo
-	read -e -p "如果已经理解 nano 使用方法，请按任意键继续，如要取消请使用 Ctrl+C 。" var
-	nano "${aria2_conf}"
-	Read_config
-	if [[ ${aria2_port_old} != ${aria2_port} ]]; then
-		aria2_RPC_port=${aria2_port}
-		aria2_port=${aria2_port_old}
-		Del_iptables
-		Add_iptables
-		Save_iptables
-	fi
-	Restart_aria2
-}
-Read_config(){
-	status_type=$1
-	if [[ ! -e ${aria2_conf} ]]; then
-		if [[ ${status_type} != "un" ]]; then
-			echo -e "${Error} Aria2 配置文件不存在 !" && exit 1
-		fi
-	else
-		conf_text=$(cat ${aria2_conf}|grep -v '#')
-		aria2_dir=$(echo -e "${conf_text}"|grep "dir="|awk -F "=" '{print $NF}')
-		aria2_port=$(echo -e "${conf_text}"|grep "rpc-listen-port="|awk -F "=" '{print $NF}')
-		aria2_passwd=$(echo -e "${conf_text}"|grep "rpc-secret="|awk -F "=" '{print $NF}')
-	fi
+
+function install_php {
+   apt-get -q -y --force-yes install php5-cli php5-mysql php5-gd php5-mcrypt php5-tidy php5-curl
+  }
 	
+function install_apache {
+apt-get -q -y --force-yes install apache2 libapache2-mod-php5 libapache2-mod-rpaf
+	sed -i s/'NameVirtualHost \*:80'/'NameVirtualHost \*:168'/g /etc/apache2/ports.conf 
+	sed -i s/'Listen 80'/'Listen 127.0.0.1:168'/g /etc/apache2/ports.conf 
+	cp /etc/apache2/apache2.conf /etc/apache2/apache2.conf.old
+	mkdir -p /etc/apache2/conf.d/
+	cat > /etc/apache2/apache2.conf <<EXNDDQW
+#LockFile ${APACHE_LOCK_DIR}/accept.lock
+PidFile \${APACHE_PID_FILE}
+Timeout 300
+KeepAlive On
+MaxKeepAliveRequests 100
+KeepAliveTimeout 15
+<IfModule mpm_prefork_module>
+	StartServers          1
+	MinSpareServers       2
+	MaxSpareServers       2
+	MaxClients            3
+	MaxRequestsPerChild   10000
+</IfModule>
+<Directory />
+    AllowOverride All
+</Directory>
+User \${APACHE_RUN_USER}
+Group \${APACHE_RUN_GROUP}
+AccessFileName .htaccess
+DefaultType text/plain
+HostnameLookups Off
+ErrorLog \${APACHE_LOG_DIR}/error.log
+LogLevel warn
+Include mods-enabled/*.load
+Include mods-enabled/*.conf
+Include ports.conf
+LogFormat "%v:%p %h %l %u %t \"%r\" %>s %O \"%{Referer}i\" \"%{User-Agent}i\"" vhost_combined
+LogFormat "%h %l %u %t \"%r\" %>s %O \"%{Referer}i\" \"%{User-Agent}i\"" combined
+LogFormat "%h %l %u %t \"%r\" %>s %O" common
+LogFormat "%{Referer}i -> %U" referer
+LogFormat "%{User-agent}i" agent
+Include conf.d/
+Include sites-enabled/
+EXNDDQW
+
+echo "rewrite headers expires authz_host" | a2enmod
+echo "alias auth_basic authn_file authz_default authz_groupfile authz_user autoindex cgi env negotiation status" | a2dismod
+rm /etc/apache2/sites-enabled/000-default
+/etc/init.d/apache2 restart
+/etc/init.d/nginx restart
+
 }
-View_Aria2(){
-	check_installed_status
-	Read_config
-	ip=$(wget -qO- -t1 -T2 ipinfo.io/ip)
-	if [[ -z "${ip}" ]]; then
-		ip=$(wget -qO- -t1 -T2 api.ip.sb/ip)
-		if [[ -z "${ip}" ]]; then
-			ip=$(wget -qO- -t1 -T2 members.3322.org/dyndns/getip)
-			if [[ -z "${ip}" ]]; then
-				ip="VPS_IP(外网IP检测失败)"
-			fi
-		fi
+function install_syslogd {
+	# We just need a simple vanilla syslogd. Also there is no need to log to
+	# so many files (waste of fd). Just dump them into
+	# /var/log/(cron/mail/messages)
+	check_install /usr/sbin/syslogd inetutils-syslogd
+	invoke-rc.d inetutils-syslogd stop
+
+	for file in /var/log/*.log /var/log/mail.* /var/log/debug /var/log/syslog
+	do
+		[ -f "$file" ] && rm -f "$file"
+	done
+	for dir in fsck news
+	do
+		[ -d "/var/log/$dir" ] && rm -rf "/var/log/$dir"
+	done
+
+	cat > /etc/syslog.conf <<END
+*.*;mail.none;cron.none -/var/log/messages
+cron.*                  -/var/log/cron
+mail.*                  -/var/log/mail
+END
+
+	[ -d /etc/logrotate.d ] || mkdir -p /etc/logrotate.d
+	cat > /etc/logrotate.d/inetutils-syslogd <<END
+/var/log/cron
+/var/log/mail
+/var/log/messages {
+   rotate 4
+   weekly
+   missingok
+   notifempty
+   compress
+   sharedscripts
+   postrotate
+		/etc/init.d/inetutils-syslogd reload >/dev/null
+   endscript
+}
+END
+
+	invoke-rc.d inetutils-syslogd start
+}
+
+function install_eaccelerator {
+
+apt-get -y --force-yes install build-essential php5-dev bzip2
+cd /tmp
+wget http://nchc.dl.sourceforge.net/project/eaccelerator/eaccelerator/eAccelerator%200.9.6.1/eaccelerator-0.9.6.1.zip
+unzip eaccelerator-0.9.6.1.zip
+cd eaccelerator-0.9.6.1
+phpize
+./configure --enable-eaccelerator=shared --with-php-config=/usr/bin/php-config --without-eaccelerator-use-inode
+make
+make install
+
+cat >> /etc/php5/apache2/php.ini<<end
+extension=eaccelerator.so
+[eaccelerator]
+eaccelerator.shm_size=8
+eaccelerator.cache_dir=/tmp/eaccelerator
+eaccelerator.enable=1
+eaccelerator.optimizer=1
+eaccelerator.check_mtime=1
+eaccelerator.debug=0
+eaccelerator.filter=""
+eaccelerator.shm_max=0
+eaccelerator.shm_ttl=0
+eaccelerator.shm_prune_period=0
+eaccelerator.shm_only=0
+eaccelerator.compress=1
+eaccelerator.compress_level=9
+end
+
+mkdir /tmp/eaccelerator
+chmod 777 /tmp/eaccelerator
+
+
+sed -i '2a chmod 777 /tmp/eaccelerator'  /etc/rc.local
+sed -i '2a mkdir /tmp/eaccelerator'  /etc/rc.local
+/etc/init.d/apache2 restart
+}
+
+function install_vhost {
+	check_install wget wget
+	if [ -z "$1" ]
+	then
+		die "Usage: `basename $0` vhost <hostname>"
 	fi
-	[[ -z "${aria2_dir}" ]] && aria2_dir="找不到配置参数"
-	[[ -z "${aria2_port}" ]] && aria2_port="找不到配置参数"
-	[[ -z "${aria2_passwd}" ]] && aria2_passwd="找不到配置参数(或无密码)"
-	clear
-	echo -e "\nAria2 简单配置信息：\n
- 地址\t: ${Green_font_prefix}${ip}${Font_color_suffix}
- 端口\t: ${Green_font_prefix}${aria2_port}${Font_color_suffix}
- 密码\t: ${Green_font_prefix}${aria2_passwd}${Font_color_suffix}
- 目录\t: ${Green_font_prefix}${aria2_dir}${Font_color_suffix}\n"
-}
-View_Log(){
-	[[ ! -e ${aria2_log} ]] && echo -e "${Error} Aria2 日志文件不存在 !" && exit 1
-	echo && echo -e "${Tip} 按 ${Red_font_prefix}Ctrl+C${Font_color_suffix} 终止查看日志" && echo -e "如果需要查看完整日志内容，请用 ${Red_font_prefix}cat ${aria2_log}${Font_color_suffix} 命令。" && echo
-	tail -f ${aria2_log}
-}
-Update_bt_tracker(){
-	check_installed_status
-	check_crontab_installed_status
-	crontab_update_status=$(crontab -l|grep "aria2.sh update-bt-tracker")
-	if [[ -z "${crontab_update_status}" ]]; then
-		echo && echo -e "当前自动更新模式: ${Red_font_prefix}未开启${Font_color_suffix}" && echo
-		echo -e "确定要开启 ${Green_font_prefix}Aria2 自动更新 BT-Tracker服务器${Font_color_suffix} 功能吗？(一般情况下会加强BT下载效果)[Y/n]"
-		read -e -p "注意：该功能会定时重启 Aria2！(默认: y):" crontab_update_status_ny
-		[[ -z "${crontab_update_status_ny}" ]] && crontab_update_status_ny="y"
-		if [[ ${crontab_update_status_ny} == [Yy] ]]; then
-			crontab_update_start
-		else
-			echo && echo "	已取消..." && echo
-		fi
-	else
-		echo && echo -e "当前自动更新模式: ${Green_font_prefix}已开启${Font_color_suffix}" && echo
-		echo -e "确定要关闭 ${Red_font_prefix}Aria2 自动更新 BT-Tracker服务器${Font_color_suffix} 功能吗？(一般情况下会加强BT下载效果)[y/N]"
-		read -e -p "注意：该功能会定时重启 Aria2！(默认: n):" crontab_update_status_ny
-		[[ -z "${crontab_update_status_ny}" ]] && crontab_update_status_ny="n"
-		if [[ ${crontab_update_status_ny} == [Yy] ]]; then
-			crontab_update_stop
-		else
-			echo && echo "	已取消..." && echo
-		fi
-	fi
-}
-crontab_update_start(){
-	crontab -l > "$file_1/crontab.bak"
-	sed -i "/aria2.sh update-bt-tracker/d" "$file_1/crontab.bak"
-	echo -e "\n0 3 * * 1 /bin/bash $file_1/aria2.sh update-bt-tracker" >> "$file_1/crontab.bak"
-	crontab "$file_1/crontab.bak"
-	rm -f "$file_1/crontab.bak"
-	cron_config=$(crontab -l | grep "aria2.sh update-bt-tracker")
-	if [[ -z ${cron_config} ]]; then
-		echo -e "${Error} Aria2 自动更新 BT-Tracker服务器 开启失败 !" && exit 1
-	else
-		echo -e "${Info} Aria2 自动更新 BT-Tracker服务器 开启成功 !"
-		Update_bt_tracker_cron
-	fi
-}
-crontab_update_stop(){
-	crontab -l > "$file_1/crontab.bak"
-	sed -i "/aria2.sh update-bt-tracker/d" "$file_1/crontab.bak"
-	crontab "$file_1/crontab.bak"
-	rm -f "$file_1/crontab.bak"
-	cron_config=$(crontab -l | grep "aria2.sh update-bt-tracker")
-	if [[ ! -z ${cron_config} ]]; then
-		echo -e "${Error} Aria2 自动更新 BT-Tracker服务器 停止失败 !" && exit 1
-	else
-		echo -e "${Info} Aria2 自动更新 BT-Tracker服务器 停止成功 !"
-	fi
-}
-Update_bt_tracker_cron(){
-	check_installed_status
-	check_pid
-	[[ ! -z ${PID} ]] && /etc/init.d/aria2 stop
-	bt_tracker_list=$(wget -qO- https://raw.githubusercontent.com/ngosang/trackerslist/master/trackers_all.txt |awk NF|sed ":a;N;s/\n/,/g;ta")
-	if [ -z "`grep "bt-tracker" ${aria2_conf}`" ]; then
-		sed -i '$a bt-tracker='${bt_tracker_list} "${aria2_conf}"
-		echo -e "${Info} 添加成功..."
-	else
-		sed -i "s@bt-tracker.*@bt-tracker=$bt_tracker_list@g" "${aria2_conf}"
-		echo -e "${Info} 更新成功..."
-	fi
-	/etc/init.d/aria2 start
-}
-Update_aria2(){
-	check_installed_status
-	check_new_ver
-	check_ver_comparison
-}
-Uninstall_aria2(){
-	check_installed_status "un"
-	echo "确定要卸载 Aria2 ? (y/N)"
-	echo
-	read -e -p "(默认: n):" unyn
-	[[ -z ${unyn} ]] && unyn="n"
-	if [[ ${unyn} == [Yy] ]]; then
-		crontab -l > "$file_1/crontab.bak"
-		sed -i "/aria2.sh/d" "$file_1/crontab.bak"
-		crontab "$file_1/crontab.bak"
-		rm -f "$file_1/crontab.bak"
-		check_pid
-		[[ ! -z $PID ]] && kill -9 ${PID}
-		Read_config "un"
-		Del_iptables
-		Save_iptables
-		cd "${Folder}"
-		make uninstall
-		cd ..
-		rm -rf "${aria2c}"
-		rm -rf "${Folder}"
-		rm -rf "${file}"
-		if [[ ${release} = "centos" ]]; then
-			chkconfig --del aria2
-		else
-			update-rc.d -f aria2 remove
-		fi
-		rm -rf "/etc/init.d/aria2"
-		echo && echo "Aria2 卸载完成 !" && echo
-	else
-		echo && echo "卸载已取消..." && echo
-	fi
-}
-Add_iptables(){
-	iptables -I INPUT -m state --state NEW -m tcp -p tcp --dport ${aria2_RPC_port} -j ACCEPT
-	iptables -I INPUT -m state --state NEW -m udp -p udp --dport ${aria2_RPC_port} -j ACCEPT
-}
-Del_iptables(){
-	iptables -D INPUT -m state --state NEW -m tcp -p tcp --dport ${aria2_port} -j ACCEPT
-	iptables -D INPUT -m state --state NEW -m udp -p udp --dport ${aria2_port} -j ACCEPT
-}
-Save_iptables(){
-	if [[ ${release} == "centos" ]]; then
-		service iptables save
-	else
-		iptables-save > /etc/iptables.up.rules
-	fi
-}
-Set_iptables(){
-	if [[ ${release} == "centos" ]]; then
-		service iptables save
-		chkconfig --level 2345 iptables on
-	else
-		iptables-save > /etc/iptables.up.rules
-		echo -e '#!/bin/bash\n/sbin/iptables-restore < /etc/iptables.up.rules' > /etc/network/if-pre-up.d/iptables
-		chmod +x /etc/network/if-pre-up.d/iptables
-	fi
-}
-Update_Shell(){
-	sh_new_ver=$(wget --no-check-certificate -qO- -t1 -T3 "https://raw.githubusercontent.com/ToyoDAdoubiBackup/doubi/master/aria2.sh"|grep 'sh_ver="'|awk -F "=" '{print $NF}'|sed 's/\"//g'|head -1) && sh_new_type="github"
-	[[ -z ${sh_new_ver} ]] && echo -e "${Error} 无法链接到 Github !" && exit 0
-	if [[ -e "/etc/init.d/aria2" ]]; then
-		rm -rf /etc/init.d/aria2
-		Service_aria2
-	fi
-	wget -N --no-check-certificate "https://raw.githubusercontent.com/ToyoDAdoubiBackup/doubi/master/aria2.sh" && chmod +x aria2.sh
-	echo -e "脚本已更新为最新版本[ ${sh_new_ver} ] !(注意：因为更新方式为直接覆盖当前运行的脚本，所以可能下面会提示一些报错，无视即可)" && exit 0
-}
-action=$1
-if [[ "${action}" == "update-bt-tracker" ]]; then
-	Update_bt_tracker_cron
-else
-echo && echo -e " Aria2 一键安装管理脚本 ${Red_font_prefix}[v${sh_ver}]${Font_color_suffix}
-  -- Toyo | doub.io/shell-jc4 --
-  
- ${Green_font_prefix} 0.${Font_color_suffix} 升级脚本
-————————————
- ${Green_font_prefix} 1.${Font_color_suffix} 安装 Aria2
- ${Green_font_prefix} 2.${Font_color_suffix} 更新 Aria2
- ${Green_font_prefix} 3.${Font_color_suffix} 卸载 Aria2
-————————————
- ${Green_font_prefix} 4.${Font_color_suffix} 启动 Aria2
- ${Green_font_prefix} 5.${Font_color_suffix} 停止 Aria2
- ${Green_font_prefix} 6.${Font_color_suffix} 重启 Aria2
-————————————
- ${Green_font_prefix} 7.${Font_color_suffix} 修改 配置文件
- ${Green_font_prefix} 8.${Font_color_suffix} 查看 配置信息
- ${Green_font_prefix} 9.${Font_color_suffix} 查看 日志信息
- ${Green_font_prefix}10.${Font_color_suffix} 配置 自动更新 BT-Tracker服务器
-————————————" && echo
-if [[ -e ${aria2c} ]]; then
-	check_pid
-	if [[ ! -z "${PID}" ]]; then
-		echo -e " 当前状态: ${Green_font_prefix}已安装${Font_color_suffix} 并 ${Green_font_prefix}已启动${Font_color_suffix}"
-	else
-		echo -e " 当前状态: ${Green_font_prefix}已安装${Font_color_suffix} 但 ${Red_font_prefix}未启动${Font_color_suffix}"
-	fi
-else
-	echo -e " 当前状态: ${Red_font_prefix}未安装${Font_color_suffix}"
+
+	if [ ! -d /var/www ];
+		then
+		mkdir /var/www
 fi
-echo
-read -e -p " 请输入数字 [0-10]:" num
-case "$num" in
-	0)
-	Update_Shell
+	mkdir "/var/www/$1"
+	chown -R www-data "/var/www/$1"
+		chmod -R 755 "/var/www/$1"
+
+	  # Setting up Nginx mapping
+	cat > "/etc/nginx/conf.d/$1.conf" <<END
+server {
+	server_name $1;
+	root /var/www/$1;
+	location / {
+		index index.html index.htm;
+	}
+}
+END
+	invoke-rc.d nginx reload
+	
+	cat > "/var/www/$1/index.html" <<END
+Hello world!
+		----$2
+END
+	invoke-rc.d nginx reload	
+}
+
+function install_dhost {
+	check_install wget wget
+	if [ ! -d /var/www ];
+		then
+		mkdir /var/www
+	fi
+	if [ -z "$1" ]
+	then
+		die "Usage: `basename $0` dhost <hostname>"
+	fi
+	mkdir "/var/www/$1"
+ 	chown -R www-data "/var/www/$1"
+	chmod -R 755 "/var/www/$1"
+
+# Setting up Nginx mapping
+	cat > "/etc/nginx/conf.d/$1.conf" <<END
+server
+	{
+		listen       80;
+		server_name $1;
+		index index.html index.htm index.php default.html default.htm default.php;
+		root  /var/www/$1;
+
+		location / {
+			try_files \$uri @apache;
+			}
+
+		location @apache {
+			internal;
+			proxy_pass http://127.0.0.1:168;
+			include proxy.conf;
+			}
+
+		location ~ .*\.(php|php5)?$
+			{
+				proxy_pass http://127.0.0.1:168;
+				include proxy.conf;
+			}
+
+		location ~ .*\.(gif|jpg|jpeg|png|bmp|swf|ico)$
+			{
+				expires      30d;
+			}
+
+		location ~ .*\.(js|css)?$
+			{
+				expires      30d;
+			}
+
+		$al
+	}
+END
+
+
+	invoke-rc.d nginx reload
+	
+	ServerAdmin=""
+	read -p "Please input Administrator Email Address:" ServerAdmin
+	if [ "$ServerAdmin" == "" ]; then
+		echo "Administrator Email Address will set to webmaster@example.com!"
+		ServerAdmin="webmaster@example.com"
+	else
+	echo "==========================="
+	echo Server Administrator Email="$ServerAdmin"
+	echo "==========================="
+	fi
+	cat >/etc/apache2/conf.d/$1.conf<<eof
+<VirtualHost *:168>
+ServerAdmin $ServerAdmin
+php_admin_value open_basedir "/var/www/$1:/tmp/:/var/tmp/:/proc/"
+DocumentRoot /var/www/$1
+ServerName $1
+ErrorLog /var/log/apache2/$1_error.log
+CustomLog /var/log/apache2/$1_access.log combined
+</VirtualHost>
+eof
+/etc/init.d/apache2 restart	
+}
+
+function install_typecho {
+	check_install wget wget
+	if [ ! -d /var/www ];
+		then
+		mkdir /var/www
+	fi
+	if [ -z "$1" ]
+	then
+		die "Usage: `basename $0` typecho <hostname>"
+	fi
+
+	# Downloading the WordPress' latest and greatest distribution.
+		rm -rf /tmp/build
+	wget -O - "https://github.com/typecho/typecho/releases/download/v1.0-14.10.10-release/1.0.14.10.10.-release.tar.gz" | \
+		tar zxf - -C /tmp/
+	mv /tmp/build/ "/var/www/$1"
+	rm -rf /tmp/build
+ 	chown -R www-data "/var/www/$1"
+	chmod -R 755 "/var/www/$1"
+
+        # Setting up the MySQL database
+        dbname=`echo $1 | tr . _`
+        userid=`get_domain_name $1`
+	# MySQL userid cannot be more than 15 characters long
+	userid="${dbname:0:15}"
+	passwd=`get_password "$userid@mysql"`
+
+	mysqladmin create "$dbname"
+	echo "GRANT ALL PRIVILEGES ON \`$dbname\`.* TO \`$userid\`@localhost IDENTIFIED BY '$passwd';" | \
+		mysql
+
+	# Setting up Nginx mapping
+
+	cat > "/etc/nginx/conf.d/$1.conf" <<END
+server
+	{
+		listen       80;
+		server_name $1;
+		index index.html index.htm index.php default.html default.htm default.php;
+		root  /var/www/$1;
+
+		location / {
+			try_files \$uri @apache;
+			}
+
+		location @apache {
+			internal;
+			proxy_pass http://127.0.0.1:168;
+			include proxy.conf;
+			}
+
+		location ~ .*\.(php|php5)?$
+			{
+			proxy_pass http://127.0.0.1:168;
+			include proxy.conf;
+			}
+
+		location ~ .*\.(gif|jpg|jpeg|png|bmp|swf|ico)$
+			{
+				expires      30d;
+			}
+
+		location ~ .*\.(js|css)?$
+			{
+				expires      30d;
+			}
+
+		$al
+	}
+END
+
+	invoke-rc.d nginx reload
+		
+
+	ServerAdmin=""
+	read -p "Please input Administrator Email Address:" ServerAdmin
+	if [ "$ServerAdmin" == "" ]; then
+		echo "Administrator Email Address will set to webmaster@example.com!"
+		ServerAdmin="webmaster@example.com"
+	else
+	echo "==========================="
+	echo Server Administrator Email="$ServerAdmin"
+	echo "==========================="
+	fi
+	cat >/etc/apache2/conf.d/$1.conf<<eof
+<VirtualHost *:168>
+ServerAdmin $ServerAdmin
+php_admin_value open_basedir "/var/www/$1:/tmp/:/var/tmp/:/proc/"
+DocumentRoot /var/www/$1
+ServerName $1
+</VirtualHost>
+#ErrorLog /var/log/apache2/$1_error.log
+#CustomLog /var/log/apache2/$1_access.log combined
+eof
+		
+/etc/init.d/apache2 restart
+	
+	cat >> "/root/$1.mysql.txt" <<END
+[typycho_myqsl]
+dbname = $dbname
+username = $userid
+password = $passwd
+END
+
+	echo "mysql dataname:" $dbname
+	echo "mysql username:" $userid
+	echo "mysql passwd:" $passwd
+}
+
+function install_wordpress_cn {
+	check_install wget wget
+	if [ -z "$1" ]
+	then
+		die "Usage: `basename $0` wordpress <hostname>"
+	fi
+
+	# Downloading the WordPress' latest and greatest distribution.
+	mkdir /tmp/wordpress.$$
+	wget -O - http://cn.wordpress.org/latest-zh_CN.tar.gz | \
+		tar zxf - -C /tmp/wordpress.$$
+	mv /tmp/wordpress.$$/wordpress "/var/www/$1"
+	rm -rf /tmp/wordpress.$$
+	chown -R www-data "/var/www/$1"
+	chmod -R 755 "/var/www/$1"
+
+	# Setting up the MySQL database
+	dbname=`echo $1 | tr . _`
+	userid=`get_domain_name $1`
+	# MySQL userid cannot be more than 15 characters long
+	userid="${dbname:0:15}"
+	passwd=`get_password "$userid@mysql"`
+	cp "/var/www/$1/wp-config-sample.php" "/var/www/$1/wp-config.php"
+	sed -i "s/database_name_here/$dbname/; s/username_here/$userid/; s/password_here/$passwd/" \
+		"/var/www/$1/wp-config.php"
+	sed -i "31a define(\'WP_CACHE\', true);"  "/var/www/$1/wp-config.php"
+	mysqladmin create "$dbname"
+	echo "GRANT ALL PRIVILEGES ON \`$dbname\`.* TO \`$userid\`@localhost IDENTIFIED BY '$passwd';" | \
+		mysql
+
+	# Setting up Nginx mapping
+	cat > "/etc/nginx/conf.d/$1.conf" <<END
+server
+	{
+		listen       80;
+		server_name $1;
+		index index.html index.htm index.php default.html default.htm default.php;
+		root  /var/www/$1;
+
+		location / {
+			try_files \$uri @apache;
+			}
+
+		location @apache {
+			internal;
+			proxy_pass http://127.0.0.1:168;
+			include proxy.conf;
+			}
+
+		location ~ .*\.(php|php5)?$
+			{
+			proxy_pass http://127.0.0.1:168;
+			include proxy.conf;
+			}
+
+		location ~ .*\.(gif|jpg|jpeg|png|bmp|swf|ico)$
+			{
+				expires      30d;
+			}
+
+		location ~ .*\.(js|css)?$
+			{
+				expires      30d;
+			}
+
+		$al
+	}
+END
+
+cat >> "/root/$1.mysql.txt" <<END
+[wordpress_myqsl]
+dbname = $dbname
+username = $userid
+password = $passwd
+END
+	invoke-rc.d nginx reload
+	
+	ServerAdmin=""
+	read -p "Please input Administrator Email Address:" ServerAdmin
+	if [ "$ServerAdmin" == "" ]; then
+		echo "Administrator Email Address will set to webmaster@example.com!"
+		ServerAdmin="webmaster@example.com"
+	else
+	echo "==========================="
+	echo Server Administrator Email="$ServerAdmin"
+	echo "==========================="
+	fi
+	cat >/etc/apache2/conf.d/$1.conf<<eof
+<VirtualHost *:168>
+ServerAdmin $ServerAdmin
+php_admin_value open_basedir "/var/www/$1:/tmp/:/var/tmp/:/proc/"
+DocumentRoot /var/www/$1
+ServerName $1
+#ErrorLog /var/log/apache2/$1_error.log
+#CustomLog /var/log/apache2/$1_access.log combined
+</VirtualHost>
+eof
+/etc/init.d/apache2 restart
+}
+
+
+function install_wordpress_en {
+	check_install wget wget
+	if [ -z "$1" ]
+	then
+		die "Usage: `basename $0` wordpress_en <hostname>"
+	fi
+
+	# Downloading the WordPress' latest and greatest distribution.
+	mkdir /tmp/wordpress.$$
+	wget -O - http://wordpress.org/latest.tar.gz | \
+		tar zxf - -C /tmp/wordpress.$$
+	mv /tmp/wordpress.$$/wordpress "/var/www/$1"
+	rm -rf /tmp/wordpress.$$
+	chown -R www-data "/var/www/$1"
+	chmod -R 755 "/var/www/$1"
+
+	# Setting up the MySQL database
+	dbname=`echo $1 | tr . _`
+	userid=`get_domain_name $1`
+	# MySQL userid cannot be more than 15 characters long
+	userid="${dbname:0:15}"
+	passwd=`get_password "$userid@mysql"`
+	cp "/var/www/$1/wp-config-sample.php" "/var/www/$1/wp-config.php"
+	sed -i "s/database_name_here/$dbname/; s/username_here/$userid/; s/password_here/$passwd/" \
+		"/var/www/$1/wp-config.php"
+	sed -i "31a define(\'WP_CACHE\', true);"  "/var/www/$1/wp-config.php"
+	mysqladmin create "$dbname"
+	echo "GRANT ALL PRIVILEGES ON \`$dbname\`.* TO \`$userid\`@localhost IDENTIFIED BY '$passwd';" | \
+		mysql
+
+	# Setting up Nginx mapping
+	cat > "/etc/nginx/conf.d/$1.conf" <<END
+server
+	{
+		listen       80;
+		server_name $1;
+		index index.html index.htm index.php default.html default.htm default.php;
+		root  /var/www/$1;
+
+		location / {
+			try_files \$uri @apache;
+			}
+
+		location @apache {
+			internal;
+			proxy_pass http://127.0.0.1:168;
+			include proxy.conf;
+			}
+
+		location ~ .*\.(php|php5)?$
+			{
+			proxy_pass http://127.0.0.1:168;
+			include proxy.conf;
+			}
+
+		location ~ .*\.(gif|jpg|jpeg|png|bmp|swf|ico)$
+			{
+				expires      30d;
+			}
+
+		location ~ .*\.(js|css)?$
+			{
+				expires      30d;
+			}
+
+		$al
+	}
+END
+
+cat >> "/root/$1.mysql.txt" <<END
+[wordpress_myqsl]
+dbname = $dbname
+username = $userid
+password = $passwd
+END
+	invoke-rc.d nginx reload
+	
+	ServerAdmin=""
+	read -p "Please input Administrator Email Address:" ServerAdmin
+	if [ "$ServerAdmin" == "" ]; then
+		echo "Administrator Email Address will set to webmaster@example.com!"
+		ServerAdmin="webmaster@example.com"
+	else
+	echo "==========================="
+	echo Server Administrator Email="$ServerAdmin"
+	echo "==========================="
+	fi
+	cat >/etc/apache2/conf.d/$1.conf<<eof
+<VirtualHost *:168>
+ServerAdmin $ServerAdmin
+php_admin_value open_basedir "/var/www/$1:/tmp/:/var/tmp/:/proc/"
+DocumentRoot /var/www/$1
+ServerName $1
+#ErrorLog /var/log/apache2/$1_error.log
+#CustomLog /var/log/apache2/$1_access.log combined
+</VirtualHost>
+eof
+/etc/init.d/apache2 restart
+}
+
+
+function install_rainloop {
+	check_install wget wget
+	check_install bsdtar bsdtar
+	if [ -z "$1" ]
+	then
+		die "Usage: `basename $0` rainloop <hostname>"
+	fi
+
+	# Downloading the Rainloop' latest and greatest distribution.
+	mkdir /tmp/rainloop.$$
+	wget -O - http://repository.rainloop.net/v2/webmail/rainloop-latest.zip | \
+	bsdtar xf - -C /tmp/rainloop.$$
+	mv /tmp/rainloop.$$ "/var/www/$1"
+	rm -rf /tmp/rainloop.$$
+	cat > "/var/www/$1/.htaccess" <<END
+	php_value upload_max_filesize 8m
+	php_value post_max_size 25m
+END
+	chown -R www-data "/var/www/$1"
+	chmod -R 755 "/var/www/$1"
+
+	# Setting up the MySQL database
+	dbname=`echo $1 | tr . _`
+	userid=`get_domain_name $1`
+	# MySQL userid cannot be more than 15 characters long
+	userid="${dbname:0:15}"
+	mysqladmin create "$dbname"
+	echo "GRANT ALL PRIVILEGES ON \`$dbname\`.* TO \`$userid\`@localhost IDENTIFIED BY '$passwd';" | \
+		mysql
+
+	# Setting up Nginx mapping
+	cat > "/etc/nginx/conf.d/$1.conf" <<END
+server
+		{
+		        listen       80;
+		        server_name $1;
+		        index index.html index.htm index.php default.html default.htm default.php;
+		        root  /var/www/$1;
+
+		        location / {
+		                try_files \$uri @apache;
+		                }
+
+		       location @apache {
+		                internal;
+		                proxy_pass http://127.0.0.1:168;
+		                include proxy.conf;
+		                }
+
+		        location ~ .*\.(php|php5)?$
+		                {
+		                proxy_pass http://127.0.0.1:168;
+		                include proxy.conf;
+		                }
+
+		        location ~ .*\.(gif|jpg|jpeg|png|bmp|swf|ico)$
+		                {
+		                        expires      30d;
+		                }
+
+		        location ~ .*\.(js|css)?$
+		                {
+		                        expires      30d;
+		                }
+
+		        $al
+		}
+END
+
+cat >> "/root/$1.mysql.txt" <<END
+[rainloop_myqsl]
+dbname = $dbname
+username = $userid
+password = $passwd
+END
+	invoke-rc.d nginx reload
+
+		ServerAdmin=""
+		read -p "Please input Administrator Email Address:" ServerAdmin
+		if [ "$ServerAdmin" == "" ]; then
+		        echo "Administrator Email Address will set to webmaster@example.com!"
+		        ServerAdmin="webmaster@example.com"
+		else
+		echo "==========================="
+		echo Server Administrator Email="$ServerAdmin"
+		echo "==========================="
+		fi
+		cat >/etc/apache2/conf.d/$1.conf<<eof
+<VirtualHost *:168>
+ServerAdmin $ServerAdmin
+php_admin_value open_basedir "/var/www/$1:/tmp/:/var/tmp/:/proc/"
+DocumentRoot /var/www/$1
+ServerName $1
+#ErrorLog /var/log/apache2/$1_error.log
+#CustomLog /var/log/apache2/$1_access.log combined
+</VirtualHost>
+eof
+/etc/init.d/apache2 restart
+}
+
+function install_phpmyadmin {
+	check_install wget wget
+	if [ -z "$1" ]
+	then
+		die "Usage: `basename $0` phpmyadmin <hostname>"
+	fi
+
+	# Downloading the phpmyadmin latest and greatest distribution.
+	mkdir /tmp/phpmyadmin.$$
+	wget -O - https://files.phpmyadmin.net/phpMyAdmin/4.4.13.1/phpMyAdmin-4.4.13.1-all-languages.tar.gz | \
+		tar zxf - -C /tmp/phpmyadmin.$$
+	mv /tmp/phpmyadmin.$$/phpMyAdmin* "/var/www/$1/phpMyAdmin"
+	rm -rf /tmp/phpmyadmin.$$
+	chown -R www-data "/var/www/$1"
+	chmod -R 755 "/var/www/$1"
+
+		# Setting up Nginx mapping
+	cat > "/etc/nginx/conf.d/$1.conf" <<END
+server
+	{
+		listen       80;
+		server_name $1;
+		index index.html index.htm index.php default.html default.htm default.php;
+		root  /var/www/$1;
+
+		location / {
+			try_files \$uri @apache;
+			}
+
+		location @apache {
+			internal;
+			proxy_pass http://127.0.0.1:168;
+			include proxy.conf;
+			}
+
+		location ~ .*\.(php|php5)?$
+			{
+			proxy_pass http://127.0.0.1:168;
+			include proxy.conf;
+			}
+
+		location ~ .*\.(gif|jpg|jpeg|png|bmp|swf|ico)$
+			{
+				expires      30d;
+			}
+
+		location ~ .*\.(js|css)?$
+			{
+				expires      30d;
+			}
+
+		$al
+	}
+END
+
+invoke-rc.d nginx reload
+	
+	ServerAdmin=""
+	read -p "Please input Administrator Email Address:" ServerAdmin
+	if [ "$ServerAdmin" == "" ]; then
+		echo "Administrator Email Address will set to webmaster@example.com!"
+		ServerAdmin="webmaster@example.com"
+	else
+	echo "==========================="
+	echo Server Administrator Email="$ServerAdmin"
+	echo "==========================="
+	fi
+	cat >/etc/apache2/conf.d/$1.conf<<eof
+<VirtualHost *:168>
+ServerAdmin $ServerAdmin
+php_admin_value open_basedir "/var/www/$1:/tmp/:/var/tmp/:/proc/"
+DocumentRoot /var/www/$1
+ServerName $1
+#ErrorLog /var/log/apache2/$1_error.log
+#CustomLog /var/log/apache2/$1_access.log combined
+</VirtualHost>
+eof
+/etc/init.d/apache2 restart
+
+cat ~/.my.cnf
+}
+
+
+function print_info {
+	echo -n -e '\e[1;36m'
+	echo -n $1
+	echo -e '\e[0m'
+}
+
+function print_warn {
+	echo -n -e '\e[1;33m'
+	echo -n $1
+	echo -e '\e[0m'
+}
+
+function check_version {
+	cat /etc/issue | grep "Linux 5" 
+
+if [ $? -ne 0 ]; then
+	cat > /etc/init.d/vzquota  << EndFunc
+#!/bin/sh
+### BEGIN INIT INFO
+# Provides:                 vzquota
+# Required-Start:
+# Required-Stop:
+# Should-Start:             $local_fs $syslog
+# Should-Stop:              $local_fs $syslog
+# Default-Start:            0 1 2 3 4 5 6
+# Default-Stop:
+# Short-Description:        Fixed(?) vzquota init script
+### END INIT INFO
+EndFunc
+fi
+}
+
+
+function remove_unneeded {
+	# Some Debian have portmap installed. We don't need that.
+	check_remove /sbin/portmap portmap
+
+	# Remove rsyslogd, which allocates ~30MB privvmpages on an OpenVZ system,
+	# which might make some low-end VPS inoperatable. We will do this even
+	# before running apt-get update.
+	check_remove /usr/sbin/rsyslogd rsyslog
+
+	# Other packages that seem to be pretty common in standard OpenVZ
+	# templates.
+	check_remove /usr/sbin/apache2 'apache2*'
+	check_remove /usr/sbin/named bind9
+	check_remove /usr/sbin/smbd 'samba*'
+	check_remove /usr/sbin/nscd nscd
+
+	# Need to stop sendmail as removing the package does not seem to stop it.
+	if [ -f /usr/lib/sm.bin/smtpd ]
+	then
+		invoke-rc.d sendmail stop
+		check_remove /usr/lib/sm.bin/smtpd 'sendmail*'
+	fi
+}
+
+function update_stable {
+	apt-get -q -y update
+	apt-get -q -y upgrade
+	apt-get -q -y dist-upgrade
+	apt-get -y install libc6 perl debconf dialog bsdutils
+	apt-get -y install apt apt-utils dselect dpkg
+	#~ apt-get -q -y upgrade
+}
+
+function update_nginx {
+	apt-get -q -y update
+	invoke-rc.d nginx stop
+	apt-get -q -y remove nginx
+	apt-get -q -y --force-yes install nginx
+	if [ ! -d /etc/nginx ];
+		then
+		mkdir /etc/nginx
+	fi
+	if [ ! -d /etc/nginx/conf.d ];
+		then
+		mkdir /etc/nginx/conf.d
+	fi
+	cat > /etc/nginx/conf.d/actgod.conf <<END
+client_max_body_size 20m;
+server_names_hash_bucket_size 64;
+END
+	sed -i s/'^worker_processes [0-9];'/'worker_processes 1;'/g /etc/nginx/nginx.conf
+	invoke-rc.d nginx restart
+	if [ ! -d /var/www ];
+		then
+		mkdir /var/www
+	fi
+	cat > /etc/nginx/proxy.conf <<EXND
+proxy_connect_timeout 30s;
+proxy_send_timeout   90;
+proxy_read_timeout   90;
+proxy_buffer_size    32k;
+proxy_buffers     4 32k;
+proxy_busy_buffers_size 64k;
+proxy_redirect     off;
+proxy_hide_header  Vary;
+proxy_set_header   Accept-Encoding '';
+proxy_set_header   Host   \$host;
+proxy_set_header   Referer \$http_referer;
+proxy_set_header   Cookie \$http_cookie;
+proxy_set_header   X-Real-IP  \$remote_addr;
+proxy_set_header   X-Forwarded-For \$proxy_add_x_forwarded_for;
+EXND
+invoke-rc.d nginx restart
+}
+
+########################################################################
+# START OF PROGRAM
+########################################################################
+export PATH=/bin:/usr/bin:/sbin:/usr/sbin
+
+check_sanity
+case "$1" in
+exim4)
+	install_exim4
 	;;
-	1)
-	Install_aria2
+mysql)
+	install_mysql
 	;;
-	2)
-	Update_aria2
+nginx)
+	install_nginx
 	;;
-	3)
-	Uninstall_aria2
+php)
+	install_php
 	;;
-	4)
-	Start_aria2
+apache)
+	install_apache
 	;;
-	5)
-	Stop_aria2
+system)
+	check_version
+	remove_unneeded
+	update_stable
+	install_dash
+	install_syslogd
+	install_dropbear
 	;;
-	6)
-	Restart_aria2
+typecho)
+	install_typecho $2
 	;;
-	7)
-	Set_aria2
+dhost)
+	install_dhost $2
 	;;
-	8)
-	View_Aria2
+vhost)
+	install_vhost $2
 	;;
-	9)
-	View_Log
+wordpress)
+	install_wordpress_cn $2
 	;;
-	10)
-	Update_bt_tracker
+wordpress_en)
+	install_wordpress_en $2
 	;;
-	*)
-	echo "请输入正确数字 [0-10]"
+rainloop)
+	install_rainloop $2
+	;;
+stable)
+	check_version 
+	remove_unneeded
+	update_stable
+	install_dash
+	install_syslogd
+	install_dropbear
+	install_exim4
+	install_mysql	
+	install_nginx
+	install_php
+	install_apache
+		;;
+updatenginx)
+	update_nginx
+		;;
+phpmyadmin)
+	install_phpmyadmin $2
+	;;
+eaccelerator)
+	install_eaccelerator
+	;;
+sshport)
+cat > /etc/xinetd.d/dropbear <<END
+service dropbear
+{
+socket_type = stream
+only_from = 0.0.0.0
+wait = no
+user = root
+protocol = tcp
+server = /usr/sbin/dropbear
+server_args = -i
+disable = no
+port = $2
+type = unlisted
+}
+END
+echo "Please reboot.."
+		;;
+addnginx)
+	sed -i s/'^worker_processes [0-9];'/'worker_processes iGodactgod;'/g /etc/nginx/nginx.conf
+		sed -i s/iGodactgod/$2/g /etc/nginx/nginx.conf
+		invoke-rc.d nginx restart
+		;;
+addapache)
+cat > /etc/apache2/apache2.conf <<EXNDDQW
+LockFile ${APACHE_LOCK_DIR}/accept.lock
+PidFile \${APACHE_PID_FILE}
+Timeout 300
+KeepAlive On
+MaxKeepAliveRequests 100
+KeepAliveTimeout 15
+<IfModule mpm_prefork_module>
+	StartServers          $2
+	MinSpareServers       2
+	MaxSpareServers       3
+	MaxClients            $3
+	MaxRequestsPerChild   10000
+</IfModule>
+User \${APACHE_RUN_USER}
+Group \${APACHE_RUN_GROUP}
+AccessFileName .htaccess
+DefaultType text/plain
+HostnameLookups Off
+ErrorLog \${APACHE_LOG_DIR}/error.log
+LogLevel warn
+Include mods-enabled/*.load
+Include mods-enabled/*.conf
+Include ports.conf
+LogFormat "%v:%p %h %l %u %t \"%r\" %>s %O \"%{Referer}i\" \"%{User-Agent}i\"" vhost_combined
+LogFormat "%h %l %u %t \"%r\" %>s %O \"%{Referer}i\" \"%{User-Agent}i\"" combined
+LogFormat "%h %l %u %t \"%r\" %>s %O" common
+LogFormat "%{Referer}i -> %U" referer
+LogFormat "%{User-agent}i" agent
+Include conf.d/
+Include sites-enabled/
+EXNDDQW
+/etc/init.d/apache2 restart
+;;
+ssh)
+	cat >> /etc/shells <<END
+/sbin/nologin
+END
+useradd $2 -s /sbin/nologin
+echo $2:$3 | chpasswd 
+	;;
+httpproxy)
+	cat > /etc/nginx/sites-enabled/httpproxy.conf <<END
+	server {
+	listen $2;
+	resolver 8.8.8.8;
+	location / {
+	proxy_pass http://\$http_host\$request_uri;
+		}
+	}
+END
+	invoke-rc.d nginx restart
+	;;
+*)
+	echo 'Usage:' `basename $0` '[option]'
+	echo 'Available option:'
+	for option in system exim4 mysql nginx php wordpress wordpress_en rainloop ssh addnginx stable testing dhost vhost httpproxy eaccelerator  apache addapache sshport phpmyadmin
+	do
+		echo '  -' $option
+	done
 	;;
 esac
-fi
