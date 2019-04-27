@@ -1,6 +1,6 @@
 #!/bin/bash
 
-sh_ver="1.1.10"
+sh_ver="19.4.28"
 
 check_root()
 {
