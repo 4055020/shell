@@ -2,10 +2,10 @@
 sh_ver="19.4.28"
 check_root
 function httpRequest(){
-    info=`curl -s -m 10 --connect-timeout 10 -I https://raw.githubusercontent.com/4055020/shell/master/$1.sh`
+    info=`curl -s -m 10 --connect-timeout 10 -I https://raw.githubusercontent.com/4055020/shell/master/Other/$1.sh`
     code=`echo $info|grep "HTTP"|awk '{print $2}'`
     if [ "$code" == "200" ];then
-        bash -c "$(curl -sS https://raw.githubusercontent.com/4055020/shell/master/$1.sh)"
+        bash -c "$(curl -sS https://raw.githubusercontent.com/4055020/shell/master/Other/$1.sh)"
     else
         echo "请求失败，网络失败或尚未支持的命令"
     fi
