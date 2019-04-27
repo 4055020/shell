@@ -1,5 +1,5 @@
 #!/bin/bash
-sh_ver="18.8.8"
+sh_ver="18.8.9"
 check_root
 check_shell
 function httpRequest(){
@@ -7,8 +7,10 @@ function httpRequest(){
     code=`echo $info|grep "HTTP"|awk '{print $2}'`
     if [ "$code" == "200" ];then
         bash -c "$(curl -sS https://raw.githubusercontent.com/4055020/shell/master/Other/$1.sh)"
+	echo "请求失败1，网络失败或尚未支持的命令"
     else
-        echo "请求失败，网络失败或尚未支持的命令"
+    	bash -c "$(curl -sS https://raw.githubusercontent.com/4055020/shell/master/Other/$1.sh)"
+        echo "请求失败2，网络失败或尚未支持的命令"
     fi
 }
 check_shell(){
@@ -21,6 +23,7 @@ sh_new_ver=$(wget --no-check-certificate -qO- "https://raw.githubusercontent.com
 		httpRequest "$1"
 	fi
 }
-check_root(){
+check_root()
+{
 	[[ $EUID != 0 ]] && echo -e "当前非ROOT账号(或没有ROOT权限)，无法继续操作，请更换ROOT账号或使用 su 命令获取临时ROOT权限（执行后可能会提示输入当前账号的密码）。" && exit 1
 }
