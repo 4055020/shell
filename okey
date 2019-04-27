@@ -1,0 +1,26 @@
+#!/bin/bash
+sh_ver="19.4.28"
+check_root
+function httpRequest(){
+    info=`curl -s -m 10 --connect-timeout 10 -I https://raw.githubusercontent.com/4055020/shell/master/$1.sh`
+    code=`echo $info|grep "HTTP"|awk '{print $2}'`
+    if [ "$code" == "200" ];then
+        bash -c "$(curl -sS https://raw.githubusercontent.com/4055020/shell/master/$1.sh)"
+    else
+        echo "请求失败，网络失败或尚未支持的命令"
+    fi
+}
+check_shell(){
+sh_new_ver=$(wget --no-check-certificate -qO- "https://raw.githubusercontent.com/4055020/shell/master/okey"|grep 'sh_ver="'|awk -F "=" '{print $NF}'|sed 's/\"//g'|head -1)
+[[ -z ${sh_new_ver} ]] && echo -e "${Error} 无法链接到 Github !" && exit 0
+	if [[ ${sh_new_ver} != ${sh_ver} ]]; then
+		wget --no-check-certificate -qO okey 'https://raw.githubusercontent.com/4055020/shell/master/okey' && chmod -x okey
+		httpRequest "$1"
+	else
+		httpRequest "$1"
+	fi
+}
+check_root(){
+	[[ $EUID != 0 ]] && echo -e "${Error} 当前非ROOT账号(或没有ROOT权限)，无法继续操作，请更换ROOT账号或使用 ${Green_background_prefix}sudo su${Font_color_suffix} 命令获取临时ROOT权限（执行后可能会提示输入当前账号的密码）。" && exit 1
+}
+check_shell
