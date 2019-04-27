@@ -1,0 +1,70 @@
+#!/bin/bash
+
+sh_ver="1.1.10"
+
+check_root()
+{
+	[[ $EUID != 0 ]] && echo -e "${Error} 当前非ROOT账号(或没有ROOT权限)，无法继续操作，请更换ROOT账号或使用 ${Green_background_prefix}sudo su${Font_color_suffix} 命令获取临时ROOT权限（执行后可能会提示输入当前账号的密码）。" && exit 1
+}
+#检查系统
+check_sys(){
+	if [[ -f /etc/redhat-release ]]; then
+		release="centos"
+	elif cat /etc/issue | grep -q -E -i "debian"; then
+		release="debian"
+	elif cat /etc/issue | grep -q -E -i "ubuntu"; then
+		release="ubuntu"
+	elif cat /etc/issue | grep -q -E -i "centos|red hat|redhat"; then
+		release="centos"
+	elif cat /proc/version | grep -q -E -i "debian"; then
+		release="debian"
+	elif cat /proc/version | grep -q -E -i "ubuntu"; then
+		release="ubuntu"
+	elif cat /proc/version | grep -q -E -i "centos|red hat|redhat"; then
+		release="centos"
+    fi
+	bit=`uname -m`
+}
+
+
+Installation_dependency(){
+	if [[ ${release} = "centos" ]]; then
+		yum update
+		yum -y groupinstall "Development Tools"
+		yum install nano -y
+	else
+		apt-get update
+		apt-get install nano build-essential -y
+	fi
+}
+
+
+Update_Shell(){
+sh_new_ver=$(wget --no-check-certificate -qO- "https://raw.githubusercontent.com/ToyoDAdoubiBackup/doubi/master/aria2.sh"|grep 'sh_ver="'|awk -F "=" '{print $NF}'|sed 's/\"//g'|head -1)
+[[ -z ${sh_new_ver} ]] && echo -e "${Error} 无法链接到 Github !" && exit 0
+	if [[ ${sh_new_ver} != ${sh_ver} ]]; then
+
+		echo -e "脚本已更新为最新版本1[ ${sh_new_ver} ] !(注意：因为更新方式为直接覆盖当前运行的脚本，所以可能下面会提示一些报错，无视即可)" && exit 0
+	else
+
+		echo -e "脚本已更新为最新版本2[ ${sh_new_ver} ] !(注意：因为更新方式为直接覆盖当前运行的脚本，所以可能下面会提示一些报错，无视即可)" && exit 0
+	fi
+}
+
+
+function httpRequest()
+{
+    #curl 请求
+    info=`curl -s -m 10 --connect-timeout 10 -I https://raw.githubusercontent.com/4055020/shell/master/$1.sh`
+
+    #获取返回码
+    code=`echo $info|grep "HTTP"|awk '{print $2}'`
+    #对响应码进行判断
+    if [ "$code" == "200" ];then
+        bash -c "$(curl -sS https://raw.githubusercontent.com/4055020/shell/master/$1.sh)"
+    else
+        echo "请求失败，网络失败或尚未支持的命令"
+    fi
+}
+
+Update_Shell
