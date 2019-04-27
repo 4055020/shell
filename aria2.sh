@@ -69,12 +69,12 @@ check_pid(){
 	PID=`ps -ef| grep "aria2c"| grep -v grep| grep -v "aria2.sh"| grep -v "init.d"| grep -v "service"| awk '{print $2}'`
 }
 check_new_ver(){
-	echo -e "${Info} 请输入 Aria2 版本号，格式如：[ 1.34.0 ]，获取地址：[ https://github.com/q3aql/aria2-static-builds/releases ]"
+	echo -e "${Info} 请输入 Aria2 版本号，格式如：[ 1.34.0 ]，获取地址：[ https://github.com/king567/Aria2-static-build-128-thread/releases ]"
 	read -e -p "默认回车自动获取最新版本号:" aria2_new_ver
 	if [[ -z ${aria2_new_ver} ]]; then
-		aria2_new_ver=$(wget --no-check-certificate -qO- https://api.github.com/repos/q3aql/aria2-static-builds/releases | grep -o '"tag_name": ".*"' |head -n 1| sed 's/"//g;s/v//g' | sed 's/tag_name: //g')
+		aria2_new_ver=$(wget --no-check-certificate -qO- https://api.github.com/repos/king567/Aria2-static-build-128-thread/releases | grep -o '"tag_name": ".*"' |head -n 1| sed 's/"//g;s/v//g' | sed 's/tag_name: //g')
 		if [[ -z ${aria2_new_ver} ]]; then
-			echo -e "${Error} Aria2 最新版本获取失败，请手动获取最新版本号[ https://github.com/q3aql/aria2-static-builds/releases ]"
+			echo -e "${Error} Aria2 最新版本获取失败，请手动获取最新版本号[ https://github.com/king567/Aria2-static-build-128-thread/releases ]"
 			read -e -p "请输入版本号 [ 格式如 1.34.0 ] :" aria2_new_ver
 			[[ -z "${aria2_new_ver}" ]] && echo "取消..." && exit 1
 		else
@@ -112,7 +112,7 @@ Download_aria2(){
 	else
 		bit="arm-rbpi"
 	fi
-	wget -N --no-check-certificate "https://github.com/q3aql/aria2-static-builds/releases/download/v${aria2_new_ver}/aria2-${aria2_new_ver}-linux-gnu-${bit}-build1.tar.bz2"
+	wget -N --no-check-certificate "https://github.com/king567/Aria2-static-build-128-thread/releases/download/v${aria2_new_ver}/aria2-${aria2_new_ver}-linux-gnu-${bit}-build1.tar.bz2"
 	Aria2_Name="aria2-${aria2_new_ver}-linux-gnu-${bit}-build1"
 	
 	[[ ! -s "${Aria2_Name}.tar.bz2" ]] && echo -e "${Error} Aria2 压缩包下载失败 !" && exit 1
@@ -562,13 +562,13 @@ Set_iptables(){
 	fi
 }
 Update_Shell(){
-	sh_new_ver=$(wget --no-check-certificate -qO- -t1 -T3 "https://raw.githubusercontent.com/heweiye/ToyoDAdoubiBackup/master/aria2.sh"|grep 'sh_ver="'|awk -F "=" '{print $NF}'|sed 's/\"//g'|head -1) && sh_new_type="github"
+	sh_new_ver=$(wget --no-check-certificate -qO- -t1 -T3 "https://raw.githubusercontent.com/4055020/shell/master/aria2.sh"|grep 'sh_ver="'|awk -F "=" '{print $NF}'|sed 's/\"//g'|head -1) && sh_new_type="github"
 	[[ -z ${sh_new_ver} ]] && echo -e "${Error} 无法链接到 Github !" && exit 0
 	if [[ -e "/etc/init.d/aria2" ]]; then
 		rm -rf /etc/init.d/aria2
 		Service_aria2
 	fi
-	wget -N --no-check-certificate "https://raw.githubusercontent.com/heweiye/ToyoDAdoubiBackup/master/aria2.sh" && chmod +x aria2.sh
+	wget -N --no-check-certificate "https://raw.githubusercontent.com/4055020/shell/master/aria2.sh" && chmod +x aria2.sh
 	echo -e "脚本已更新为最新版本[ ${sh_new_ver} ] !(注意：因为更新方式为直接覆盖当前运行的脚本，所以可能下面会提示一些报错，无视即可)" && exit 0
 }
 action=$1
