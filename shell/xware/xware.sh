@@ -9,7 +9,7 @@ systemctl enable rc-local
 sleep 7s
 docker logs xware
 
-if  [ -e /etc/rc.local ]；then
+if [ -e /etc/rc.local ];then
 	wget -N --no-check-certificate -qO /home/xserver.py https://raw.githubusercontent.com/4055020/XwareClient/master/server_deploy/xserver.py && chmod +x /home/xserver.py
 	sed -i '/exit 0/i\python /home/xserver.py &' /etc/rc.local
 else
