@@ -1,6 +1,25 @@
 #!/bin/bash
 sh_ver="17.01.01"
 
+check_sys(){
+	if [[ -f /etc/redhat-release ]]; then
+		release="centos"
+	elif cat /etc/issue | grep -q -E -i "debian"; then
+		release="debian"
+	elif cat /etc/issue | grep -q -E -i "ubuntu"; then
+		release="ubuntu"
+	elif cat /etc/issue | grep -q -E -i "centos|red hat|redhat"; then
+		release="centos"
+	elif cat /proc/version | grep -q -E -i "debian"; then
+		release="debian"
+	elif cat /proc/version | grep -q -E -i "ubuntu"; then
+		release="ubuntu"
+	elif cat /proc/version | grep -q -E -i "centos|red hat|redhat"; then
+		release="centos"
+    fi
+	bit=`uname -m`
+}
+
 function httpRequest(){
     info=`curl -s -m 10 --connect-timeout 10 -I https://raw.githubusercontent.com/4055020/shell/master/Other/$1/$1.sh`
     code=`echo $info|grep "HTTP"|awk '{print $2}'`
@@ -10,6 +29,15 @@ function httpRequest(){
         echo "尚未支持的命令"
     fi
 }
+
+Installation(){
+	if [[ ${release} = "centos" ]]; then
+		yum install wget curl -y
+	else
+		apt-get install wget curl -y
+	fi
+}
+
 check_shell(){
 sh_new_ver=$(wget --no-check-certificate -qO- "https://raw.githubusercontent.com/4055020/shell/master/reok"|grep 'sh_ver="'|awk -F "=" '{print $NF}'|sed 's/\"//g'|head -1)
 [[ -z ${sh_new_ver} ]] && echo "无法连接Github" && exit 0
@@ -21,10 +49,20 @@ sh_new_ver=$(wget --no-check-certificate -qO- "https://raw.githubusercontent.com
 		echo "已连接到Github"
 	fi
 }
+
 check_root()
 {
 	[[ $EUID != 0 ]] && echo -e "当前非ROOT账号(或没有ROOT权限)，无法继续操作，请更换ROOT账号或使用 su 命令获取临时ROOT权限（执行后可能会提示输入当前账号的密码）。" && exit 1
 }
+
 check_root
+check_sys
+Installation
 check_shell
 httpRequest "$1"
+
+
+
+
+
+
