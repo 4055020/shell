@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-
 docker pull senorsen/docker-thunder-xware
 mkdir -p /data/TDDOWNLOAD
 mkdir -p /data/cfg
@@ -8,10 +7,10 @@ systemctl start rc-local
 systemctl enable rc-local
 sleep 7s
 docker logs xware
-
 if [ -e /etc/rc.local ];then
 	wget -N --no-check-certificate -qO /home/xserver.py https://raw.githubusercontent.com/4055020/XwareClient/master/server_deploy/xserver.py && chmod +x /home/xserver.py
-	sed -i '/exit 0/i\python /home/xserver.py &' /etc/rc.local
+	sed -i '/exit 0/i\nohup python /home/xserver.py &' /etc/rc.local
+	chmod +x /etc/rc.local
 else
 cat <<EOF >/etc/rc.local
 #!/bin/sh -e
@@ -27,7 +26,7 @@ cat <<EOF >/etc/rc.local
 #
 # By default this script does nothing.
 
-python /home/xserver.py &
+nohup python /home/xserver.py &
 
 exit 0
 EOF
