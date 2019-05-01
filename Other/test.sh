@@ -97,5 +97,5 @@ function check_command(){
 
 check_sys
 check_Dep wget,awk,grep,sed,cut,cat,cpio,gzip,find,dirname,basename,file,xz,git;
-check_ver
+#check_ver
 check_instructions
