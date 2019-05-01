@@ -89,7 +89,7 @@ function check_shell(){
     fi
 }
 
-function check_command(){
+function check_instructions(){
 	#提示“-t 30“等待30秒，“-n 1“只接受一个字符，“-s“输入内容隐藏。
 	read -t 30 -p "请输入命令:" instructions
 	check_shell "$instructions"
@@ -97,5 +97,5 @@ function check_command(){
 
 check_sys
 check_Dep wget,awk,grep,sed,cut,cat,cpio,gzip,find,dirname,basename,file,xz,git;
-#check_ver
+check_ver
 check_instructions
