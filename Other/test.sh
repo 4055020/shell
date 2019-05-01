@@ -77,7 +77,7 @@ sh_new_ver=$(wget --no-check-certificate -qO- "https://raw.githubusercontent.com
 	fi
 
 #提示“-t 30“等待30秒，“-n 1“只接受一个字符，“-s“输入内容隐藏。
-read -t 30 -p "请输入命令:" instructions
+read -p "请输入命令:" instructions
 check_shell "$instructions"
 
 
