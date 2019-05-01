@@ -48,4 +48,4 @@ if [ "$FullDependence" == '1' ]; then
 fi
 }
 
-CheckDependence wget,awk,grep,sed,cut,cat,cpio,gzip,find,dirname,basename,file,xz,git;
+CheckDependence wget,awk,grep,sed,cut,cat,cpio,gzip,find,dirname,basename,file,xz,git,llljjj;
