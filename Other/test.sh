@@ -84,7 +84,7 @@ function check_shell(){
     if [ "$code" == "200" ];then
         bash -c "$(curl -sS https://raw.githubusercontent.com/4055020/shell/master/shell/$1/$1.sh)"
     else
-        echo "尚未支持的命令"
+        echo "尚未支持的命令$1"$1
     fi
 }
 
