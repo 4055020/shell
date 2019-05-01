@@ -11,44 +11,7 @@ printf "
 "
 # Check if user is root
 [ $(id -u) != "0" ] && { echo "${CFAILURE}Error: You must be root to run this script${CEND}"; exit 1; }
-
-check_sys(){
-	if [[ -f /etc/redhat-release ]]; then
-		check_sys="centos"
-	elif cat /etc/issue | grep -q -E -i "debian"; then
-		check_sys="debian"
-	elif cat /etc/issue | grep -q -E -i "ubuntu"; then
-		check_sys="ubuntu"
-	elif cat /etc/issue | grep -q -E -i "centos|red hat|redhat"; then
-		check_sys="centos"
-	elif cat /proc/version | grep -q -E -i "debian"; then
-		check_sys="debian"
-	elif cat /proc/version | grep -q -E -i "ubuntu"; then
-		check_sys="ubuntu"
-	elif cat /proc/version | grep -q -E -i "centos|red hat|redhat"; then
-		check_sys="centos"
-    fi
-	bit=`uname -m`
-
-	if [[ ${check_sys} = "centos" ]]; then
-		sh_sys="yum"
-	else
-		sh_sys="apt"
-	fi
-}
-
-check_ver(){
-sh_new_ver=$(wget --no-check-certificate -qO- "https://raw.githubusercontent.com/4055020/shell/master/reok"|grep 'sh_ver="'|awk -F "=" '{print $NF}'|sed 's/\"//g'|head -1)
-[[ -z ${sh_new_ver} ]] && echo "无法连接Github" && exit 0
-	if [[ ${sh_new_ver} != ${sh_ver} ]]; then
-		wget --no-check-certificate -qO /root/reok 'https://raw.githubusercontent.com/4055020/shell/master/reok'
-		cp -f /root/reok /usr/local/sbin/reok
-		chmod -x /usr/local/sbin/reok
-	else
-		echo "已连接到Github"
-	fi
-}
-
+read -p "请输入命令:" instructions
 function check_Dep(){
 Dependence='0';
 for BIN_DEP in `echo "$1" |sed 's/,/\n/g'`
@@ -78,24 +41,50 @@ if [ "$Dependence" == '1' ]; then
 fi
 }
 
+if [[ -f /etc/redhat-release ]]; then
+	check_sys="centos"
+elif cat /etc/issue | grep -q -E -i "debian"; then
+	check_sys="debian"
+elif cat /etc/issue | grep -q -E -i "ubuntu"; then
+	check_sys="ubuntu"
+elif cat /etc/issue | grep -q -E -i "centos|red hat|redhat"; then
+	check_sys="centos"
+elif cat /proc/version | grep -q -E -i "debian"; then
+	check_sys="debian"
+elif cat /proc/version | grep -q -E -i "ubuntu"; then
+	check_sys="ubuntu"
+elif cat /proc/version | grep -q -E -i "centos|red hat|redhat"; then
+	check_sys="centos"
+fi
+bit=`uname -m`
 
-function check_shell(){
-    info=`curl -s -m 10 --connect-timeout 10 -I https://raw.githubusercontent.com/4055020/shell/master/shell/$instructions/$instructions.sh`
-    code=`echo $info|grep "HTTP"|awk '{print $2}'`
-    if [ "$code" == "200" ];then
-        bash -c "$(curl -sS https://raw.githubusercontent.com/4055020/shell/master/shell/$instructions/$instructions.sh)"
-    else
-        echo "尚未支持的命令$1"$1
-    fi
-}
+if [[ ${check_sys} = "centos" ]]; then
+	sh_sys="yum"
+else
+	sh_sys="apt"
+fi
 
-function check_instructions(){
-	#提示“-t 30“等待30秒，“-n 1“只接受一个字符，“-s“输入内容隐藏。
-	read -t 30 -p "请输入命令:" instructions
-	check_shell "$instructions"
-}
-
-check_sys
 check_Dep wget,awk,grep,sed,cut,cat,cpio,gzip,find,dirname,basename,file,xz,git;
-check_ver
-check_instructions
+
+sh_new_ver=$(wget --no-check-certificate -qO- "https://raw.githubusercontent.com/4055020/shell/master/reok"|grep 'sh_ver="'|awk -F "=" '{print $NF}'|sed 's/\"//g'|head -1)
+[[ -z ${sh_new_ver} ]] && echo "无法连接Github" && exit 0
+	if [[ ${sh_new_ver} != ${sh_ver} ]]; then
+		wget --no-check-certificate -qO /root/reok 'https://raw.githubusercontent.com/4055020/shell/master/reok'
+		cp -f /root/reok /usr/local/sbin/reok
+		chmod -x /usr/local/sbin/reok
+	else
+		echo "已连接到Github"
+	fi
+
+#提示“-t 30“等待30秒，“-n 1“只接受一个字符，“-s“输入内容隐藏。
+read -p "请输入命令:" instructions
+check_shell "$instructions"
+
+
+info=`curl -s -m 10 --connect-timeout 10 -I https://raw.githubusercontent.com/4055020/shell/master/shell/$instructions/$instructions.sh`
+code=`echo $info|grep "HTTP"|awk '{print $2}'`
+if [ "$code" == "200" ];then
+	bash -c "$(curl -sS https://raw.githubusercontent.com/4055020/shell/master/shell/$instructions/$instructions.sh)"
+else
+	echo "尚未支持的命令$1"$1
+fi
