@@ -19,6 +19,7 @@ printf "
 # Check if user is root
 [ $(id -u) != "0" ] && { echo "${CFAILURE}Error: You must be root to run this script${CEND}"; exit 1; }
 
+
 function CheckDependence(){
 FullDependence='0';
 for BIN_DEP in `echo "$1" |sed 's/,/\n/g'`
@@ -43,9 +44,10 @@ for BIN_DEP in `echo "$1" |sed 's/,/\n/g'`
     fi
   done
 if [ "$FullDependence" == '1' ]; then
-  echo -ne "\n\033[31mError! \033[0mPlease use '\033[33mapt-get\033[0m' or '\033[33myum\033[0m' install it.\n\n\n"
+	yum install $FullDependence
+#	echo -ne "\n\033[31mError! \033[0mPlease use '\033[33mapt-get\033[0m' or '\033[33myum\033[0m' install it.\n\n\n"
   exit 1;
 fi
 }
 
-CheckDependence wget,awk,grep,sed,cut,cat,cpio,gzip,find,dirname,basename,file,xz,git,llljjj;
+CheckDependence wget,awk,grep,sed,cut,cat,cpio,gzip,find,dirname,basename,file,xz,git;
