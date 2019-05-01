@@ -3,12 +3,54 @@ export PATH=/sbin:/bin:/usr/sbin:/usr/bin:/usr/local/sbin:/usr/local/bin:~/bin
 export sh=/usr/bin/reok
 export sh_new="https://raw.githubusercontent.com/4055020/shell/master/reok"
 export sh_ver="https://raw.githubusercontent.com/4055020/shell/master/config"
+
+
+
+
+function CheckDependence(){
+FullDependence='0';
+for BIN_DEP in `echo "$1" |sed 's/,/\n/g'`
+	do
+		if [[ -n "$BIN_DEP" ]]; then
+			Founded='0';
+			for BIN_PATH in `echo "$PATH" |sed 's/:/\n/g'`
+				do
+					ls $BIN_PATH/$BIN_DEP >/dev/null 2>&1;
+					if [ $? == '0' ]; then
+						Founded='1';
+						break;
+					fi
+				done
+			if [ "$Founded" == '1' ]; then
+				echo -en "[${dco_ok}]\t\t";
+			else
+				FullDependence='1';
+				echo -en "[${dco_sb}]\t\t";
+			fi
+			echo -en "\t${dco_s}$BIN_DEP${dco_t}\n";
+		fi
+	done
+if [ "$FullDependence" == '1' ]; then
+	check_dos_r
+	if [ "$dos_r" == 'CentOS' ]; then
+		echo -ne "\n${dco_sb}! ${dco_s}请执行 '${dco_y}yum install -y${dco_s}' 安装\n\n\n"
+	elif [ "$dos_r" == 'Debian' ]; then
+		echo -ne "\n${dco_sb}! ${dco_s}请执行 '${dco_y}apt-get install -y${dco_s}' 安装\n\n\n"
+	elif [ "$dos_r" == 'Ubuntu' ]; then
+		echo -ne "\n${dco_sb}! ${dco_s}请执行 '${dco_y}apt-get install -y${dco_s}' 安装\n\n\n"
+	else
+		echo -ne "\n${dco_sb}! ${dco_s}请执行 '${dco_y}apt-get install -y${dco_s}' 或者 '${dco_y}yum install -y${dco_s}' 安装\n\n\n"
+	fi
+	exit 1;
+fi
+}
+CheckDependence wget,awk,grep,sed,cut,cat,cpio,gzip,find,dirname,basename,file,xz,git;
+
+
+
+
 new_ver=$(wget --no-check-certificate -qO- $sh_ver|grep 'ver="'|awk -F "=" '{print $NF}'|sed 's/\"//g'|head -1)
 old_ver=$(md5sum $0 | cut -d' ' -f1)
-echo $new_ver
-echo $old_ver
-echo $0
-sleep 8s
 if [ "$new_ver" != "$old_ver" ]; then
 	echo -ne "正在更新" && sleep 1s && echo -ne "." && sleep 1s && echo -ne "." && sleep 1s && echo -ne "." && sleep 1s && echo
 	wget --no-check-certificate -qO $0 $sh_new && chmod 777 $0 && echo "更新完成,请重新执行" && exit 0
@@ -17,8 +59,6 @@ if [ ! -e $sh ]; then
 	cp -f $0 $sh && chmod 777 $sh
 fi
 if [ "$0" != "$sh" ]; then
-	pwd
 	echo "已升级为系统指令,请执行[reok help]获取帮助" && exit 0
 fi
-pwd
 echo "请输入命令"
