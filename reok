@@ -4,51 +4,16 @@ export sh=/usr/bin/reok
 export sh_new="https://raw.githubusercontent.com/4055020/shell/master/reok"
 export sh_ver="https://raw.githubusercontent.com/4055020/shell/master/config"
 
+#设置颜色
+export RGB31="\033[31m"				#红	错误
+export RGB33="\033[33m"				#黄	警告
+export RGB36="\033[36m"				#蓝	回显
+export RGB32="\033[32m"				#绿	成功
+export RGB35="\033[35m"				#紫	
+export RGB40="echo -en \\033[1;30m"	#灰	默认
+export RGB="\033[0m"				#关
 
-
-
-function CheckDependence(){
-FullDependence='0';
-for BIN_DEP in `echo "$1" |sed 's/,/\n/g'`
-	do
-		if [[ -n "$BIN_DEP" ]]; then
-			Founded='0';
-			for BIN_PATH in `echo "$PATH" |sed 's/:/\n/g'`
-				do
-					ls $BIN_PATH/$BIN_DEP >/dev/null 2>&1;
-					if [ $? == '0' ]; then
-						Founded='1';
-						break;
-					fi
-				done
-			if [ "$Founded" == '1' ]; then
-				echo -en "[${dco_ok}]\t\t";
-			else
-				FullDependence='1';
-				echo -en "[${dco_sb}]\t\t";
-			fi
-			echo -en "\t${dco_s}$BIN_DEP${dco_t}\n";
-		fi
-	done
-if [ "$FullDependence" == '1' ]; then
-	check_dos_r
-	if [ "$dos_r" == 'CentOS' ]; then
-		echo -ne "\n${dco_sb}! ${dco_s}请执行 '${dco_y}yum install -y${dco_s}' 安装\n\n\n"
-	elif [ "$dos_r" == 'Debian' ]; then
-		echo -ne "\n${dco_sb}! ${dco_s}请执行 '${dco_y}apt-get install -y${dco_s}' 安装\n\n\n"
-	elif [ "$dos_r" == 'Ubuntu' ]; then
-		echo -ne "\n${dco_sb}! ${dco_s}请执行 '${dco_y}apt-get install -y${dco_s}' 安装\n\n\n"
-	else
-		echo -ne "\n${dco_sb}! ${dco_s}请执行 '${dco_y}apt-get install -y${dco_s}' 或者 '${dco_y}yum install -y${dco_s}' 安装\n\n\n"
-	fi
-	exit 1;
-fi
-}
-CheckDependence wget,awk,grep,sed,cut,cat,cpio,gzip,find,dirname,basename,file,xz,git;
-
-
-
-
+function check_sus(){
 new_ver=$(wget --no-check-certificate -qO- $sh_ver|grep 'ver="'|awk -F "=" '{print $NF}'|sed 's/\"//g'|head -1)
 old_ver=$(md5sum $0 | cut -d' ' -f1)
 if [ "$new_ver" != "$old_ver" ]; then
@@ -62,3 +27,63 @@ if [ "$0" != "$sh" ]; then
 	echo "已升级为系统指令,请执行[reok help]获取帮助" && exit 0
 fi
 echo "请输入命令"
+}
+
+check_sys(){
+	if [[ -f /etc/redhat-release ]]; then
+		check_sys="centos"
+	elif cat /etc/issue | grep -q -E -i "debian"; then
+		check_sys="debian"
+	elif cat /etc/issue | grep -q -E -i "ubuntu"; then
+		check_sys="ubuntu"
+	elif cat /etc/issue | grep -q -E -i "centos|red hat|redhat"; then
+		check_sys="centos"
+	elif cat /proc/version | grep -q -E -i "debian"; then
+		check_sys="debian"
+	elif cat /proc/version | grep -q -E -i "ubuntu"; then
+		check_sys="ubuntu"
+	elif cat /proc/version | grep -q -E -i "centos|red hat|redhat"; then
+		check_sys="centos"
+    fi
+	bit=`uname -m`
+
+	if [[ ${check_sys} = "centos" ]]; then
+		sh_sys="yum"
+	else
+		sh_sys="apt"
+	fi
+}
+
+function CheckDependence(){
+Dependence='0';
+for BIN_DEP in `echo "$1" |sed 's/,/\n/g'`
+  do
+    if [[ -n "$BIN_DEP" ]]; then
+      Founded='0';
+      for BIN_PATH in `echo "$PATH" |sed 's/:/\n/g'`
+        do
+          ls $BIN_PATH/$BIN_DEP >/dev/null 2>&1;
+          if [ $? == '0' ]; then
+            Founded='1';
+            break;
+          fi
+        done
+      if [ "$Founded" == '1' ]; then
+        echo -en $RGB32[right]$RGB
+      else
+        Dependence='1';
+        echo -en $RGB31[wrong]$RGB
+      fi
+      echo -en $RGB36"\t$BIN_DEP\n"$RGB;
+    fi
+  done
+if [ "$Dependence" == '1' ]; then
+	$RGB40
+	$sh_sys install $BIN_DEP -y -q
+	echo -e $RGB36请装好$RGB31[$BIN_DEP]$RGB36再次执行$RGB33[reok]$RGB && exit 1
+fi
+}
+
+check_sys
+CheckDependence wget,awk,grep,sed,cut,cat,cpio,gzip,find,dirname,basename,file,xz,git;
+check_sus
