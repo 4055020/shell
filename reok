@@ -1,0 +1,23 @@
+#!/bin/bash
+export PATH=/sbin:/bin:/usr/sbin:/usr/bin:/usr/local/sbin:/usr/local/bin:~/bin
+export sh=/usr/bin/reok
+export sh_ver="https://raw.githubusercontent.com/4055020/shell/master/config"
+
+
+
+new_ver=$(wget --no-check-certificate -qO- $sh_ver|grep 'ver="'|awk -F "=" '{print $NF}'|sed 's/\"//g'|head -1)
+old_ver=$(md5sum $0 | cut -d' ' -f1)
+
+
+if [ "$new_ver" != "$old_ver" ]; then
+  echo -ne "正在获取" && sleep 1s && echo -ne "." && sleep 1s && echo -ne "." && sleep 1s && echo -ne "." && sleep 1s && echo
+fi
+
+
+if [ ! -e $sh ]; then
+  cp -f $0 $sh && chmod 777 $sh
+fi
+
+if [ "$0" != "$sh" ]; then
+  echo "已升级为系统指令,请直接执行reok."
+fi
