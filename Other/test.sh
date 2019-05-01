@@ -33,9 +33,9 @@ check_sys(){
 
 Installation(){
 	if [[ ${release} = "centos" ]]; then
-		yum install wget curl -y
+		release="yum"
 	else
-		apt-get install wget curl -y
+		release="apt"
 	fi
 }
 
@@ -63,7 +63,7 @@ for BIN_DEP in `echo "$1" |sed 's/,/\n/g'`
     fi
   done
 if [ "$FullDependence" == '1' ]; then
-	yum $Checkrelease $BIN_DEP
+	$release install -y $BIN_DEP
 #	echo -ne "\n\033[31mError! \033[0mPlease use '\033[33mapt-get\033[0m' or '\033[33myum\033[0m' install it.\n\n\n"
 	exit 1;
 fi
