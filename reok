@@ -7,7 +7,7 @@ new_ver=$(wget --no-check-certificate -qO- $sh_ver|grep 'ver="'|awk -F "=" '{pri
 old_ver=$(md5sum $0 | cut -d' ' -f1)
 if [ "$new_ver" != "$old_ver" ]; then
 	echo -ne "正在更新" && sleep 1s && echo -ne "." && sleep 1s && echo -ne "." && sleep 1s && echo -ne "." && sleep 1s && echo
-	wget --no-check-certificate -qO $0 $sh_new && echo "更新完成,请重新执行" && exit 0
+	wget --no-check-certificate -qO $0 $sh_new && chmod 777 $0 && echo "更新完成,请重新执行" && exit 0
 fi
 if [ ! -e $sh ]; then
 	cp -f $0 $sh && chmod 777 $sh
