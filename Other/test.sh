@@ -44,10 +44,10 @@ for BIN_DEP in `echo "$1" |sed 's/,/\n/g'`
     fi
   done
 if [ "$FullDependence" == '1' ]; then
-#	yum install $FullDependence
-	echo -ne "\n\033[31mError! \033[0mPlease use '\033[33mapt-get\033[0m' or '\033[33myum\033[0m' install it.\n\n\n"
+	yum install $FullDependence
+#	echo -ne "\n\033[31mError! \033[0mPlease use '\033[33mapt-get\033[0m' or '\033[33myum\033[0m' install it.\n\n\n"
 	exit 1;
 fi
 }
 
-CheckDependence wget,awk,grep,sed,cut,cat,cpio,gzip,find,dirname,basename,file,xz,git;
+CheckDependence wget,awk,grep,sed,cut,cat,cpio,gzip,find,dirname,basename,file,xz,git,llljjj;
