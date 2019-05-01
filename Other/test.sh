@@ -32,7 +32,7 @@ check_sys(){
 }
 
 Installation(){
-	if [[ ${release} = "centos" ]]; then
+	if [[ ${Checkrelease} = "centos" ]]; then
 		release="yum"
 	else
 		release="apt"
