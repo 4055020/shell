@@ -13,6 +13,7 @@ if [ ! -e $sh ]; then
 	cp -f $0 $sh && chmod 777 $sh
 fi
 if [ "$0" != "$sh" ]; then
+	pwd
 	echo "已升级为系统指令,请执行[reok help]获取帮助" && exit 0
 fi
 pwd
