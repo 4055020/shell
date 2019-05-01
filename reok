@@ -5,6 +5,10 @@ export sh_new="https://raw.githubusercontent.com/4055020/shell/master/reok"
 export sh_ver="https://raw.githubusercontent.com/4055020/shell/master/config"
 new_ver=$(wget --no-check-certificate -qO- $sh_ver|grep 'ver="'|awk -F "=" '{print $NF}'|sed 's/\"//g'|head -1)
 old_ver=$(md5sum $0 | cut -d' ' -f1)
+echo $new_ver
+echo $old_ver
+echo $0
+sleep 8s
 if [ "$new_ver" != "$old_ver" ]; then
 	echo -ne "正在更新" && sleep 1s && echo -ne "." && sleep 1s && echo -ne "." && sleep 1s && echo -ne "." && sleep 1s && echo
 	wget --no-check-certificate -qO $0 $sh_new && chmod 777 $0 && echo "更新完成,请重新执行" && exit 0
