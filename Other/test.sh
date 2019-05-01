@@ -80,10 +80,10 @@ fi
 
 
 function check_shell(){
-    info=`curl -s -m 10 --connect-timeout 10 -I https://raw.githubusercontent.com/4055020/shell/master/shell/$command/$command.sh`
+    info=`curl -s -m 10 --connect-timeout 10 -I https://raw.githubusercontent.com/4055020/shell/master/shell/$instructions/$instructions.sh`
     code=`echo $info|grep "HTTP"|awk '{print $2}'`
     if [ "$code" == "200" ];then
-        bash -c "$(curl -sS https://raw.githubusercontent.com/4055020/shell/master/shell/$command/$command.sh)"
+        bash -c "$(curl -sS https://raw.githubusercontent.com/4055020/shell/master/shell/$instructions/$instructions.sh)"
     else
         echo "尚未支持的命令$1"$1
     fi
@@ -91,11 +91,11 @@ function check_shell(){
 
 function check_command(){
 	#提示“-t 30“等待30秒，“-n 1“只接受一个字符，“-s“输入内容隐藏。
-	read -t 30 -p "请输入命令:" command
-	check_shell "$command"
+	read -t 30 -p "请输入命令:" instructions
+	check_shell "$instructions"
 }
 
 check_sys
 check_Dep wget,awk,grep,sed,cut,cat,cpio,gzip,find,dirname,basename,file,xz,git;
 check_ver
-check_command
+check_instructions
