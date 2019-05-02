@@ -13,7 +13,7 @@ export RGB35="\033[35m"				#紫
 export RGB40="echo -en \\033[1;30m"	#灰	默认
 export RGB="\033[0m"				#关
 
-CheckDependence wget,curl,awk,grep,sed,cut,cat;
+
 function CheckDependence(){
 Dependence='0';
 for BIN_DEP in `echo "$1" |sed 's/,/\n/g'`
@@ -44,7 +44,6 @@ if [ "$Dependence" == '1' ]; then
 fi
 }
 
-check_sys
 check_sys(){
 	if [[ -f /etc/redhat-release ]]; then
 		check_sys="centos"
@@ -70,7 +69,6 @@ check_sys(){
 	fi
 }
 
-check_sus
 function check_sus(){
 if [ ! -e $sh ]; then
 	wget --no-check-certificate -qO $sh $sh_new && chmod 777 $sh && echo -e 请直接直接带指令执行例${RGB33}reok help && exit 0
@@ -102,7 +100,9 @@ function check_shell(){
         echo "尚未支持的命令$1"$1
     fi
 }
-
+CheckDependence wget,curl,awk,grep,sed,cut,cat;
+check_sys
+check_sus
 
 
 while :; do
