@@ -86,4 +86,5 @@ fi
 check_sys
 CheckDependence wget,awk,grep,sed,cut,cat,cpio,gzip,find,dirname,basename,file,xz,git;
 check_sus
-echo "请输入命令"
+read -t 30 -p "请输入命令:" instructions
+echo 指令为 $instructions
