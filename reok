@@ -12,6 +12,6 @@ if [ ! -f $list ];then
 fi
 . $list
 echo -e "${dco_g}当前系统为 Centos $dos_b位 请按任意键继续...主菜单+ / 退出-${dco_t}"
-read -n1 -p "" answer
-list "$1"
+read -p "" answer
+list "$answer"
 exit 0
