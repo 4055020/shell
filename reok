@@ -6,7 +6,7 @@ export sh_ver="https://raw.githubusercontent.com/4055020/shell/master/config"
 
 #设置颜色
 export RGB31="\033[31m"				#红	错误
-export RGB33="\033[33m"				#黄	警告
+export RGB33="\033[33m"				#黄	提示
 export RGB36="\033[36m"				#蓝	回显
 export RGB32="\033[32m"				#绿	成功
 export RGB35="\033[35m"				#紫	
@@ -14,19 +14,15 @@ export RGB40="echo -en \\033[1;30m"	#灰	默认
 export RGB="\033[0m"				#关
 
 function check_sus(){
-new_ver=$(wget --no-check-certificate -qO- $sh_ver|grep 'ver="'|awk -F "=" '{print $NF}'|sed 's/\"//g'|head -1)
-old_ver=$(md5sum $0 | cut -d' ' -f1)
-if [ "$new_ver" != "$old_ver" ]; then
-	echo -ne "正在更新" && sleep 1s && echo -ne "." && sleep 1s && echo -ne "." && sleep 1s && echo -ne "." && sleep 1s && echo
-	wget --no-check-certificate -qO $0 $sh_new && chmod 777 $0 && echo "更新完成,请重新执行" && exit 0
-fi
 if [ ! -e $sh ]; then
 	cp -f $0 $sh && chmod 777 $sh
 fi
-if [ "$0" != "$sh" ]; then
-	echo "已升级为系统指令,请执行[reok help]获取帮助" && exit 0
+new_ver=$(wget --no-check-certificate -qO- $sh_ver|grep 'ver="'|awk -F "=" '{print $NF}'|sed 's/\"//g'|head -1)
+old_ver=$(md5sum $0 | cut -d' ' -f1)
+if [ "$new_ver" != "$old_ver" ]; then
+	echo -en $RGB36[正在检索指令] && sleep 1s && echo -ne "." && sleep 1s && echo -ne "." && sleep 1s && echo -ne "." && sleep 1s && echo
+	wget --no-check-certificate -qO $0 $sh_new && chmod 777 $0 && echo -e 指令检索指令完毕,请带指令执行例${RGB33}reok help && exit 0
 fi
-echo "请输入命令"
 }
 
 check_sys(){
@@ -87,3 +83,4 @@ fi
 check_sys
 CheckDependence wget,awk,grep,sed,cut,cat,cpio,gzip,find,dirname,basename,file,xz,git;
 check_sus
+echo "请输入命令"
