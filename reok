@@ -28,9 +28,9 @@ else
 			old_ver=$(md5sum $sh | cut -d' ' -f1)
 				if [ "$new_ver" != "$old_ver" ]; then
 					wget --no-check-certificate -qO $sh $sh_new && chmod 777 $sh
-					echo -e 指令检索完毕,列表已更新,请重新执行指令.
+					echo -e $RGB33脚本已更新,请再次执行$RGB31[reok]$RGB33指令$RGB && exit 1
 				fi
-			echo -e 指令检索完毕,列表已获取.
+			echo -e $RGB33指令列表已获取.$RGB
 		fi
 fi
 }
@@ -94,5 +94,5 @@ check_sys
 CheckDependence wget,awk,grep,sed,cut,cat,cpio,gzip,find,dirname,basename,file,xz,git;
 check_sus
 read -t 30 -p "请输入命令:" instructions
-echo -en $RGB32[指令为]$RGB$instructions
-echo 指令为 $instructions
+echo -en $RGB33[指令为]$instructions[即将执行]
+echo -en $RGB36[正在检索指令] && sleep 1s && echo -ne "." && sleep 1s && echo -ne "." && sleep 1s && echo -ne "." && sleep 1s && echo
