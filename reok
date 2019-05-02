@@ -27,7 +27,7 @@ else
 		else
 			old_ver=$(md5sum $sh | cut -d' ' -f1)
 				if [ "$new_ver" != "$old_ver" ]; then
-					wget --no-check-certificate -qO $sh $sh_new && chmod 777 $0
+					wget --no-check-certificate -qO $sh $sh_new && chmod 777 $sh
 					echo -e 指令检索完毕,列表已更新,请重新执行指令.
 				fi
 			echo -e 指令检索完毕,列表已获取.
