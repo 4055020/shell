@@ -33,6 +33,7 @@ else
 			echo -e 指令检索完毕,列表已获取.
 		fi
 fi
+}
 
 check_sys(){
 	if [[ -f /etc/redhat-release ]]; then
@@ -92,3 +93,6 @@ fi
 check_sys
 CheckDependence wget,awk,grep,sed,cut,cat,cpio,gzip,find,dirname,basename,file,xz,git;
 check_sus
+read -t 30 -p "请输入命令:" instructions
+echo -en $RGB32[指令为]$RGB$instructions
+echo 指令为 $instructions
