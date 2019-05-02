@@ -28,7 +28,8 @@ else
 			old_ver=$(md5sum $sh | cut -d' ' -f1)
 				if [ "$new_ver" != "$old_ver" ]; then
 					wget --no-check-certificate -qO $sh $sh_new && chmod 777 $sh
-					echo -e $RGB33脚本已更新,请再次执行$RGB31[reok]$RGB33指令$RGB && exit 1
+					echo -e $RGB33脚本已更新,请再次执行$RGB31[下列]$RGB33指令$RGB
+					echo -e ${RGB33}'bash -c "$(curl -sS https://raw.githubusercontent.com/4055020/shell/master/reok)"' && exit 1
 				fi
 			echo -e $RGB33指令列表已获取.$RGB
 		fi
