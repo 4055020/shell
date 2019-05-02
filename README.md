@@ -3,6 +3,8 @@
 
 ### 安装
 - curl https://raw.githubusercontent.com/4055020/shell/master/reok|bash
+-
+- bash -c "$(curl -sS https://raw.githubusercontent.com/4055020/shell/master/test.sh)"
 
 ### 命令
 
