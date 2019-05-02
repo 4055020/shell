@@ -14,14 +14,14 @@ export RGB40="echo -en \\033[1;30m"	#灰	默认
 export RGB="\033[0m"				#关
 
 function check_sus(){
-if [ ! -e $sh ]; then
-	cp -f $0 $sh && chmod 777 $sh
-fi
 new_ver=$(wget --no-check-certificate -qO- $sh_ver|grep 'ver="'|awk -F "=" '{print $NF}'|sed 's/\"//g'|head -1)
 old_ver=$(md5sum $0 | cut -d' ' -f1)
 if [ "$new_ver" != "$old_ver" ]; then
 	echo -en $RGB36[正在检索指令] && sleep 1s && echo -ne "." && sleep 1s && echo -ne "." && sleep 1s && echo -ne "." && sleep 1s && echo
-	wget --no-check-certificate -qO $0 $sh_new && chmod 777 $0 && echo -e 指令检索指令完毕,请带指令执行例${RGB33}reok help && exit 0
+	wget --no-check-certificate -qO $0 $sh_new && chmod 777 $0
+fi
+if [ ! -e $sh ]; then
+	cp -f $0 $sh && chmod 777 $sh && echo -e 指令检索指令完毕,请带指令执行例${RGB33}reok help && exit 0
 fi
 }
 
