@@ -1,7 +1,7 @@
 #!/bin/bash
 export PATH=/sbin:/bin:/usr/sbin:/usr/bin:/usr/local/sbin:/usr/local/bin:~/bin
 export sh=/usr/bin/reok
-export sh_new="https://raw.githubusercontent.com/4055020/shell/master/reok"
+export sh_new="https://raw.githubusercontent.com/4055020/shell/maste"
 export sh_ver="https://raw.githubusercontent.com/4055020/shell/master/config"
 
 #设置颜色
@@ -29,7 +29,7 @@ if [ ! -e $sh ]; then
 else
 	new_ver=$(wget --no-check-certificate -qO- $sh_ver|grep 'ver="'|awk -F "=" '{print $NF}'|sed 's/\"//g'|head -1)
 	if [ ! -n "$new_ver" ]; then
-		echo -e 指令检索失败,请检查网络. && exit 0
+		echo -e 指令检索失败,请检查网络.
 	else
 		old_ver=$(md5sum $sh | cut -d' ' -f1)
 			if [ "$new_ver" != "$old_ver" ]; then
@@ -132,10 +132,13 @@ while :; do
 		shift
 	;;
 	*)
-		read -t 30 -p "请输入命令:" instru
-		echo -en $RGB33[指令为]$instru[即将执行]
-		echo -en $RGB36 "." && sleep 1s && echo -ne "." && sleep 1s && echo -ne "." && sleep 1s && echo -ne "." && sleep 1s && echo
-		check_shell
+    info=`curl -s -m 10 --connect-timeout 10 -I https://raw.githubusercontent.com/4055020/shell/master/shell/$1.sh`
+    code=`echo $info|grep "HTTP"|awk '{print $2}'`
+    if [ "$code" == "200" ];then
+        bash -c "$(curl -sS https://raw.githubusercontent.com/4055020/shell/master/shell/$1.sh)"
+    else
+        echo 尚未支持的命令$1
+    fi
 		exit 1
 	;;
 	esac
