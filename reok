@@ -13,26 +13,32 @@ export RGB35="\033[35m"				#紫
 export RGB40="echo -en \\033[1;30m"	#灰	默认
 export RGB="\033[0m"				#关
 
-
-
+function check_shell(){
+    info=`curl -s -m 10 --connect-timeout 10 -I https://raw.githubusercontent.com/4055020/shell/master/shell/$1.sh`
+    code=`echo $info|grep "HTTP"|awk '{print $2}'`
+    if [ "$code" == "200" ];then
+        bash -c "$(curl -sS https://raw.githubusercontent.com/4055020/shell/master/shell/$1.sh)"
+    else
+        echo "尚未支持的命令$1"$1
+    fi
+}
 
 function check_sus(){
 if [ ! -e $sh ]; then
 	wget --no-check-certificate -qO $sh $sh_new && chmod 777 $sh && echo -e 请直接直接带指令执行例${RGB33}reok help && exit 0
 else
 	new_ver=$(wget --no-check-certificate -qO- $sh_ver|grep 'ver="'|awk -F "=" '{print $NF}'|sed 's/\"//g'|head -1)
-	echo -en $RGB36[正在检索指令] && sleep 1s && echo -ne "." && sleep 1s && echo -ne "." && sleep 1s && echo -ne "." && sleep 1s && echo
-		if [ ! -n "$new_ver" ]; then
-			echo -e 指令检索失败,请检查网络. && exit 0
-		else
-			old_ver=$(md5sum $sh | cut -d' ' -f1)
-				if [ "$new_ver" != "$old_ver" ]; then
-					wget --no-check-certificate -qO $sh $sh_new && chmod 777 $sh
-					echo -e $RGB33脚本已更新,请再次执行$RGB31[下列]$RGB33指令$RGB
-					echo -e ${RGB33}'bash -c "$(curl -sS https://raw.githubusercontent.com/4055020/shell/master/reok)"' && exit 1
-				fi
-			echo -e $RGB33指令列表已获取.$RGB
-		fi
+	if [ ! -n "$new_ver" ]; then
+		echo -e 指令检索失败,请检查网络. && exit 0
+	else
+		old_ver=$(md5sum $sh | cut -d' ' -f1)
+			if [ "$new_ver" != "$old_ver" ]; then
+				wget --no-check-certificate -q -O $sh $sh_new && chmod 777 $sh
+				echo -e $RGB33脚本已更新,请再次执行$RGB31[下列]$RGB33指令$RGB
+				echo -e ${RGB33}'bash -c "$(curl -sS https://raw.githubusercontent.com/4055020/shell/master/reok)"' && exit 1
+			fi
+		echo -e $RGB33指令列表已获取.$RGB
+	fi
 fi
 }
 
@@ -92,15 +98,12 @@ fi
 }
 
 check_sys
-CheckDependence wget,awk,grep,sed,cut,cat,cpio,gzip,find,dirname,basename,file,xz,git;
+CheckDependence wget,curl,awk,grep,sed,cut,cat;
 check_sus
 
 while :; do
 	case "$1" in
-	check)
-		echo check;
-		exit 0
-	;;
+
 	help)
 		echo help;
 		exit 0
@@ -109,12 +112,8 @@ while :; do
 		echo list;
 		IPLIST=$2; shift 2
 	;;
-	manage)
-		echo manage;
-		exit 0
-	;;
-	ok)
-		echo ok;
+	check)
+		echo check;
 		exit 0
 	;;
 	scan)
@@ -133,9 +132,10 @@ while :; do
 		shift
 	;;
 	*)
-		read -t 30 -p "请输入命令:" instructions
-		echo -en $RGB33[指令为]$instructions[即将执行]
+		read -t 30 -p "请输入命令:" instru
+		echo -en $RGB33[指令为]$instru[即将执行]
 		echo -en $RGB36 "." && sleep 1s && echo -ne "." && sleep 1s && echo -ne "." && sleep 1s && echo -ne "." && sleep 1s && echo
+		check_shell
 		exit 1
 	;;
 	esac
