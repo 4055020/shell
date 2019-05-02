@@ -94,6 +94,49 @@ fi
 check_sys
 CheckDependence wget,awk,grep,sed,cut,cat,cpio,gzip,find,dirname,basename,file,xz,git;
 check_sus
-read -t 30 -p "请输入命令:" instructions
-echo -en $RGB33[指令为]$instructions[即将执行]
-echo -en $RGB36[正在检索指令] && sleep 1s && echo -ne "." && sleep 1s && echo -ne "." && sleep 1s && echo -ne "." && sleep 1s && echo
+
+while :; do
+	case "$1" in
+	check)
+		echo check;
+		exit 0
+	;;
+	help)
+		echo help;
+		exit 0
+	;;
+	list)
+		echo list;
+		IPLIST=$2; shift 2
+	;;
+	manage)
+		echo manage;
+		exit 0
+	;;
+	ok)
+		echo ok;
+		exit 0
+	;;
+	scan)
+		echo scan;
+		exit 0
+	;;
+	ver)
+		echo ver;
+		exit 0
+	;;
+	-ssh_port)
+		ssh_port=$2; shift 2
+		[ ${ssh_port} -eq 22 >/dev/null 2>&1 -o ${ssh_port} -gt 1024 >/dev/null 2>&1 -a ${ssh_port} -lt 65535 >/dev/null 2>&1 ] || { echo "${CWARNING}ssh_port input error! Input range: 22,1025~65534${CEND}"; exit 1; }
+	;;
+	--)
+		shift
+	;;
+	*)
+		read -t 30 -p "请输入命令:" instructions
+		echo -en $RGB33[指令为]$instructions[即将执行]
+		echo -en $RGB36 "." && sleep 1s && echo -ne "." && sleep 1s && echo -ne "." && sleep 1s && echo -ne "." && sleep 1s && echo
+		exit 1
+	;;
+	esac
+done
