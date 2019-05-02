@@ -23,6 +23,9 @@ fi
 if [ ! -e $sh ]; then
 	cp -f $0 $sh && chmod 777 $sh && echo -e 指令检索指令完毕,请带指令执行例${RGB33}reok help && exit 0
 fi
+if [ "$0" != "$sh" ]; then
+	cp -f $0 $sh && chmod 777 $sh && rm $0 && echo -e 请带指令执行例${RGB33}reok help && exit 0
+fi
 }
 
 check_sys(){
