@@ -44,36 +44,6 @@ if [ "$Dependence" == '1' ]; then
 fi
 }
 
-function CheckDependence(){
-Dependence='0';
-for BIN_DEP in `echo "$1" |sed 's/,/\n/g'`
-  do
-    if [[ -n "$BIN_DEP" ]]; then
-      Founded='0';
-      for BIN_PATH in `echo "$PATH" |sed 's/:/\n/g'`
-        do
-          ls $BIN_PATH/$BIN_DEP >/dev/null 2>&1;
-          if [ $? == '0' ]; then
-            Founded='1';
-            break;
-          fi
-        done
-      if [ "$Founded" == '1' ]; then
-        echo -en $RGB32[right]$RGB
-      else
-        Dependence='1';
-        echo -en $RGB31[wrong]$RGB
-      fi
-      echo -en $RGB36"\t$BIN_DEP\n"$RGB;
-    fi
-  done
-if [ "$Dependence" == '1' ]; then
-	$RGB40
-	$sh_sys install $BIN_DEP -y -q
-	echo -e $RGB36请装好$RGB31[$BIN_DEP]$RGB36再次执行$RGB33[reok]$RGB && exit 1
-fi
-}
-
 check_sys(){
 	if [[ -f /etc/redhat-release ]]; then
 		check_sys="centos"
@@ -99,25 +69,6 @@ check_sys(){
 	fi
 }
 
-function check_sus(){
-if [ ! -e $sh ]; then
-	wget --no-check-certificate -qO $sh $sh_new && chmod 777 $sh && echo -e 请直接直接带指令执行例${RGB33}reok help && exit 0
-else
-	new_ver=$(wget --no-check-certificate -qO- $sh_ver|grep 'ver="'|awk -F "=" '{print $NF}'|sed 's/\"//g'|head -1)
-	if [ ! -n "$new_ver" ]; then
-		echo -e 指令检索失败,请检查网络.
-	else
-		old_ver=$(md5sum $sh | cut -d' ' -f1)
-			if [ "$new_ver" != "$old_ver" ]; then
-				wget --no-check-certificate -q -O $sh $sh_new && chmod 777 $sh
-				echo -e $RGB33脚本已更新,请再次执行$RGB31[下列]$RGB33指令$RGB
-				echo -e ${RGB33}'bash -c "$(curl -sS https://raw.githubusercontent.com/4055020/shell/master/reok)"' && exit 1
-			fi
-		echo -e $RGB33指令列表已获取.$RGB
-	fi
-fi
-}
-
 function check_shell(){
     info=`curl -s -m 10 --connect-timeout 10 -I https://raw.githubusercontent.com/4055020/shell/master/shell/$1.sh`
     code=`echo $info|grep "HTTP"|awk '{print $2}'`
@@ -127,6 +78,6 @@ function check_shell(){
         echo "尚未支持的命令$1"$1
     fi
 }
+
 CheckDependence wget,curl,awk,grep,sed,cut,cat;
 check_sys
-check_sus
