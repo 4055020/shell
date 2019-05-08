@@ -1,5 +1,4 @@
 #/bin/sh
-apt-get update -y
 apt-get install curl -y
 yum clean all
 yum make cache
