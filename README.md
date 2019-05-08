@@ -12,3 +12,8 @@
 
 ### 参数
 - aria2
+
+
+### 密钥
+- wget https://raw.githubusercontent.com/4055020/shell/master/keys
+- bash key.sh [你的Github用户名]
