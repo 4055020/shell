@@ -1,4 +1,23 @@
 yum install wget gcc make pam-devel libpng-devel -y
-wget https://fukuchi.org/works/qrencode/qrencode-4.0.2.tar.gz
-wget https://raw.githubusercontent.com/yangcvo/Google-Authenticator/master/libpam-google-authenticator-1.0-source.tar.bz2
-wget https://www.rpmfind.net/linux/dag/redhat/el7/en/x86_64/dag/RPMS/rpmforge-release-0.5.3-1.el7.rf.x86_64.rpm
+
+#安装repoforge第三方yum源
+wget https://raw.githubusercontent.com/4055020/shell/master/shell/2FA/rpmforge-release-0.5.3-1.el7.rf.x86_64.rpm
+rpm -ivh rpmforge-release-0.5.3-1.el7.rf.x86_64.rpm
+
+#安装轻量级的资源管理控制系统进行版本管理
+yum install mercurial -y
+
+
+#安装google authenticator 插件
+https://raw.githubusercontent.com/4055020/shell/master/shell/2FA/libpam-google-authenticator-1.0-source.tar.bz2
+tar -jxvf libpam-google-authenticator-1.0-source.tar.bz2
+cd libpam-google-authenticator-1.0
+make && make install
+
+
+#安装QrenCode工具，用于在Linux命令行中生成二维码
+https://raw.githubusercontent.com/4055020/shell/master/shell/2FA/qrencode-4.0.2.tar.gz
+tar -xvf qrencode-4.0.2.tar.gz
+cd qrencode-4.0.2
+./configure --prefix=/usr/
+make && make install
