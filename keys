@@ -27,5 +27,7 @@ service sshd restart
 service ssh restart
 systemctl restart sshd
 systemctl restart ssh
+systemctl restart sshd.service
+
 cd ~
 rm -rf keys
