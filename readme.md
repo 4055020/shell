@@ -18,5 +18,8 @@
 - wget https://raw.githubusercontent.com/4055020/shell/master/keys
 - bash keys [你的Github用户名]
 ### 密钥生成
--git bash
--ssh-keygen -t rsa -C "youremail@example.com"
+- git bash 模式
+- ssh-keygen -t rsa -C "youremail@example.com"
+### 密钥测试
+- git bash 模式
+- ssh -T git@github.com 
